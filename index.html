@@ -88,6 +88,20 @@
             <p class="hint" id="h-age">Define cuántas velitas tiene la torta.</p>
             <p class="error" id="e-age" hidden></p>
           </div>
+          <div class="field">
+            <span class="label-like" id="l-photo">Foto <span class="opt">(opcional)</span></span>
+            <div class="photo-picker">
+              <span class="photo-thumb" aria-hidden="true"><img id="photo-thumb" alt="" hidden><span id="photo-empty">📷</span></span>
+              <div class="photo-actions">
+                <input id="f-photo" type="file" accept="image/*" class="visually-hidden" aria-labelledby="l-photo" aria-describedby="h-photo photo-info e-photo">
+                <label for="f-photo" class="btn btn-soft btn-sm">Elegir foto</label>
+                <button type="button" id="btn-photo-remove" class="btn btn-ghost btn-sm" hidden>Quitar</button>
+              </div>
+            </div>
+            <p class="hint" id="h-photo">Se recorta en círculo y se achica para que entre en el link. No se sube a ningún lado.</p>
+            <p class="hint hint-ok" id="photo-info" hidden></p>
+            <p class="error" id="e-photo" role="alert" hidden></p>
+          </div>
         </fieldset>
 
         <fieldset>
@@ -225,6 +239,7 @@
             <div class="qr-side">
               <p><strong>Código QR</strong></p>
               <p class="hint">Para imprimir en una tarjeta o mostrar en pantalla.</p>
+              <p class="hint" id="qr-photo-note" hidden>El QR abre la invitación sin la foto: una foto no entra en un código QR.</p>
               <button type="button" id="btn-qr" class="btn btn-soft">Descargar QR (PNG)</button>
             </div>
           </div>
@@ -306,6 +321,7 @@
   <template id="tpl-card">
     <article class="card">
       <div class="card-deco" aria-hidden="true"></div>
+      <div class="card-photo" data-row="photo" hidden><img data-img="photo" alt="" width="144" height="144" decoding="async"></div>
       <p class="eyebrow">¡Estás invitado/a!</p>
       <h1 class="card-title" tabindex="-1"><span class="card-title-pre">Cumple de</span> <span class="card-name" data-f="name"></span></h1>
       <p class="card-age" data-f="age" hidden></p>
@@ -355,9 +371,21 @@
         </a>
         <button type="button" class="btn-link rsvp-decline" data-a="decline">No voy a poder ir</button>
 
-        <form class="rsvp-api" data-a="api-form" hidden>
+        <form class="rsvp-api" data-a="api-form" novalidate hidden>
           <p class="rsvp-api-title">O dejá tu confirmación acá:</p>
           <label>Tu nombre <input name="who" type="text" maxlength="60" required></label>
+          <!-- Campo trampa: las personas no lo ven; los bots suelen completarlo -->
+          <div class="hp" aria-hidden="true">
+            <label>No completar <input name="website" type="text" tabindex="-1" autocomplete="off"></label>
+          </div>
+          <div class="robot">
+            <label class="robot-check">
+              <input type="checkbox" data-a="robot">
+              <span>No soy un robot</span>
+            </label>
+            <span class="robot-side" aria-hidden="true">🤖<small>Anti-spam propio</small></span>
+          </div>
+          <p class="robot-status" data-f="robotStatus" role="status" aria-live="polite"></p>
           <button type="submit" class="btn btn-soft">Enviar confirmación</button>
           <p class="status-msg" data-f="apiStatus" role="status" aria-live="polite"></p>
         </form>

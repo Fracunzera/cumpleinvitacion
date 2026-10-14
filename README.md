@@ -32,6 +32,7 @@ Generador de invitaciones de cumpleaños **estático, gratis y sin backend**. Co
 1. Abrí el sitio (sin nada después del `#`): aparece el **generador**.
 2. Completá los datos. Solo el nombre, la fecha y la hora son obligatorios:
    - nombre de quien cumple y edad (la edad define cuántas velitas tiene la torta; desde los 11 años se usan velas con números),
+   - una foto, si querés (ver [la foto](#la-foto)),
    - fecha, hora y, si querés, hora de fin,
    - lugar y link de Google Maps,
    - mensaje para los invitados,
@@ -56,6 +57,7 @@ Una sola página (`index.html`) decide qué mostrar según el hash de la URL:
 | `https://sitio/` | El generador |
 | `https://sitio/#i=eyJ2Ijox…` | La invitación |
 | `https://sitio/#e=eyJ2Ijox…` | El generador con esos datos cargados, para editar |
+| `https://sitio/#i=eyJ2Ijox…&f=wUklG…` | La invitación con foto |
 
 Los datos se serializan así: **objeto → JSON con claves cortas → UTF-8 → base64url**. Por ejemplo:
 
@@ -74,6 +76,14 @@ Los datos se serializan así: **objeto → JSON con claves cortas → UTF-8 → 
 | `t` | hora `HH:MM` | `s` | tema: `k` infantil, `e` elegante, `m` minimalista |
 | `e` | hora de fin (opcional) | `c` | color propio `#rrggbb` |
 | `o` | offset horario de quien creó la invitación (minutos) | `r` | endpoint de RSVP propio (opcional) |
+
+### La foto
+
+La foto también viaja dentro del link, en un parámetro aparte (`&f=`), así que sigue sin haber servidor ni terceros:
+
+- El navegador de quien crea la invitación la recorta en cuadrado (en las fotos verticales, un poco más arriba del centro, para no cortar caras), la achica (hasta 176 px) y la comprime en WebP o JPEG hasta que pese **menos de 3,6 KB**. Nunca se sube a ningún lado.
+- `f` = `w` + base64url(WebP) o `j` + base64url(JPEG). Al abrir la invitación se verifican los bytes del formato y se muestra con `<img src="data:…">`. Si la foto está rota, la invitación se abre igual, sin foto.
+- Con foto, el link pasa de ~350 a ~5.000 caracteres. WhatsApp y los navegadores lo manejan sin problema, pero **un QR no tiene capacidad para una foto**: el QR abre la misma invitación sin la foto (el generador lo avisa).
 
 Gracias a `o`, la cuenta regresiva y el `.ics` son correctos aunque el invitado esté en otro huso horario: la hora se muestra tal como la escribiste y, si el invitado está en otra zona, se le aclara su hora local.
 
@@ -209,9 +219,20 @@ Para usarlo, generá el link normal y reemplazá `#i=` por `?i=`. Si lo activás
 
 `extras/rsvp-server/server.py` es un servidor chiquito en Python 3 (solo biblioteca estándar, sin `pip install`) con SQLite:
 
-- `POST /api/rsvp`: guarda una confirmación `{event, name, count, going, note}`. Valida los datos, limita el tamaño y aplica un rate limit por IP.
+- `GET /api/rsvp/challenge`: entrega un desafío anti-spam firmado (ver abajo).
+- `POST /api/rsvp`: guarda una confirmación `{event, name, count, going, note, pow}`. Valida los datos y el desafío, limita el tamaño y aplica un rate limit por IP.
 - `GET /api/rsvp?token=…`: lista los eventos. Con `&event=<id>` muestra la tabla de confirmados de esa fiesta. Agregando `&format=json` devuelve JSON.
 - `GET /?i=…`: sirve `index.html` con `og:title`/`og:description` personalizados (el modo con vista previa personalizada de arriba).
+
+### "No soy un robot" (anti-spam propio)
+
+El formulario de confirmación del backend tiene una casilla **«No soy un robot»** que no usa Google ni ningún servicio externo, y no necesita API keys. Funciona con una **prueba de trabajo**, como Hashcash o ALTCHA:
+
+1. Al tildar la casilla, el navegador pide un desafío a `GET /api/rsvp/challenge`. El server responde con un valor aleatorio y su vencimiento (10 minutos), firmados con HMAC.
+2. El navegador busca un número que, sumado al desafío, dé un SHA-256 que empiece con N bits en cero (por defecto 17: ~0,2 s en una compu y ~1 s en un celular). Para una persona es un clic, pero mandar confirmaciones en masa le cuesta cómputo a un bot.
+3. Al enviar, el server verifica la firma, el vencimiento y el hash, y que el desafío **no se haya usado antes**.
+
+Además hay un **campo trampa** invisible (si viene completo, se rechaza) y un **límite de envíos por IP**. No es imposible de saltar (ningún captcha lo es), pero frena el spam automático sin depender de terceros. La dificultad se ajusta con `RSVP_POW_BITS`: cada bit extra duplica el tiempo de cálculo.
 
 ### Instalación
 
@@ -234,6 +255,10 @@ Environment=RSVP_TOKEN=cambia-esto-por-algo-largo-y-secreto
 Environment=RSVP_DB=/var/lib/invitacion/rsvp.sqlite3
 Environment=SITE_ROOT=/var/www/invitacion
 Environment=PORT=8787
+# Opcional: dificultad del anti-spam (17 ≈ 1 s en un celular) y clave fija para
+# firmar desafíos (si no se pone, se genera una al iniciar).
+# Environment=RSVP_POW_BITS=17
+# Environment=RSVP_SECRET=otra-clave-larga
 ExecStart=/usr/bin/python3 /var/www/invitacion/extras/rsvp-server/server.py
 Restart=on-failure
 NoNewPrivileges=true
@@ -251,7 +276,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now invitacion-rsvp
 Agregá esto dentro del `server { … }` de nginx:
 
 ```nginx
-    location = /api/rsvp {
+    location /api/rsvp {     # incluye /api/rsvp/challenge
         proxy_pass http://127.0.0.1:8787;
         proxy_set_header X-Real-IP $remote_addr;
         client_max_body_size 8k;

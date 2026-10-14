@@ -54,19 +54,180 @@
     for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
     return decodeURIComponent(escape(bin));
   }
-  function base64urlEncode(str) {
-    var bytes = utf8Encode(str), bin = "";
-    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  // base64url ⇄ "binary string" (un carácter por byte)
+  function binToB64url(bin) {
     return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   }
-  function base64urlDecode(s) {
+  function b64urlToBin(s) {
     s = String(s).trim().replace(/\s+/g, "");
     if (!/^[A-Za-z0-9_-]+$/.test(s)) throw new Error("caracteres inválidos");
     s = s.replace(/-/g, "+").replace(/_/g, "/");
     while (s.length % 4) s += "=";
-    var bin = atob(s), bytes = new Uint8Array(bin.length);
+    return atob(s);
+  }
+  function base64urlEncode(str) {
+    var bytes = utf8Encode(str), bin = "";
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return binToB64url(bin);
+  }
+  function base64urlDecode(s) {
+    var bin = b64urlToBin(s), bytes = new Uint8Array(bin.length);
     for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     return utf8Decode(bytes);
+  }
+
+  // ------------------------------------------------------------------
+  // Foto: viaja aparte en el hash (&f=), como imagen chiquita comprimida.
+  //   f = "w" + base64url(WebP)  o  "j" + base64url(JPEG)
+  // Solo se aceptan esos dos formatos (se verifican los bytes mágicos), y se
+  // muestra con <img src="data:..."> así que no puede ejecutar nada.
+  // ------------------------------------------------------------------
+  var PHOTO_MAX_BYTES = 3600;     // ~4,8 KB en el link
+  var PHOTO_MAX_PARAM = 12000;    // tope al leer un link
+  var PHOTO_TYPES = { w: "image/webp", j: "image/jpeg" };
+
+  function decodePhoto(param) {
+    if (!param || param.length > PHOTO_MAX_PARAM) return "";
+    var mime = PHOTO_TYPES[param.charAt(0)];
+    if (!mime) return "";
+    var bin;
+    try { bin = b64urlToBin(param.slice(1)); } catch (e) { return ""; }
+    var isJpeg = bin.charCodeAt(0) === 0xFF && bin.charCodeAt(1) === 0xD8 && bin.charCodeAt(2) === 0xFF;
+    var isWebp = bin.slice(0, 4) === "RIFF" && bin.slice(8, 12) === "WEBP";
+    if ((mime === "image/jpeg" && !isJpeg) || (mime === "image/webp" && !isWebp)) return "";
+    return "data:" + mime + ";base64," + btoa(bin);
+  }
+
+  function loadImage(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error("imagen ilegible")); };
+      img.src = url;
+    });
+  }
+
+  // Recorta un cuadrado (centrado; en fotos verticales, más arriba para no
+  // cortar caras) y lo achica hasta que pese menos de PHOTO_MAX_BYTES.
+  function compressPhoto(file) {
+    return loadImage(file).then(function (img) {
+      var w = img.naturalWidth, h = img.naturalHeight;
+      if (!w || !h) throw new Error("imagen vacía");
+      var side = Math.min(w, h);
+      var sx = (w - side) / 2;
+      var sy = h > w ? (h - side) * 0.3 : (h - side) / 2;
+
+      // Achicar de a mitades mejora mucho la calidad en Safari
+      var src = document.createElement("canvas");
+      var cur = side, ctx;
+      src.width = src.height = cur;
+      ctx = src.getContext("2d");
+      ctx.drawImage(img, sx, sy, side, side, 0, 0, cur, cur);
+      while (cur / 2 >= 200) {
+        var half = document.createElement("canvas");
+        half.width = half.height = Math.round(cur / 2);
+        var hctx = half.getContext("2d");
+        hctx.imageSmoothingQuality = "high";
+        hctx.drawImage(src, 0, 0, half.width, half.height);
+        src = half;
+        cur = half.width;
+      }
+
+      var probe = document.createElement("canvas");
+      probe.width = probe.height = 1;
+      var webp = probe.toDataURL("image/webp").indexOf("data:image/webp") === 0;
+      var mime = webp ? "image/webp" : "image/jpeg";
+
+      var sizes = [176, 160, 144, 128, 112, 96];
+      var qualities = [0.72, 0.62, 0.52, 0.44, 0.36];
+      var out = document.createElement("canvas");
+      var octx = out.getContext("2d");
+      for (var i = 0; i < sizes.length; i++) {
+        out.width = out.height = sizes[i];
+        octx.imageSmoothingQuality = "high";
+        octx.fillStyle = "#ffffff"; // fondo para PNG con transparencia
+        octx.fillRect(0, 0, sizes[i], sizes[i]);
+        octx.drawImage(src, 0, 0, sizes[i], sizes[i]);
+        for (var j = 0; j < qualities.length; j++) {
+          var dataUrl = out.toDataURL(mime, qualities[j]);
+          var b64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+          var bytes = Math.floor(b64.length * 3 / 4) - (b64.match(/=+$/) || [""])[0].length;
+          if (bytes <= PHOTO_MAX_BYTES) {
+            var param = (webp ? "w" : "j") + binToB64url(atob(b64));
+            return { param: param, dataUrl: dataUrl, bytes: bytes, size: sizes[i] };
+          }
+        }
+      }
+      throw new Error("no se pudo achicar");
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // "No soy un robot" para el backend opcional: prueba de trabajo.
+  // El servidor firma un desafío y el navegador busca un número que, junto
+  // con él, dé un SHA-256 con N bits iniciales en cero (~1 s de cálculo).
+  // Sin servicios externos ni API keys.
+  // ------------------------------------------------------------------
+  var SHA_K = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+  ];
+  // SHA-256 de un texto ASCII; devuelve 8 palabras de 32 bits.
+  function sha256Words(ascii) {
+    var H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    var len = ascii.length, nWords = ((((len + 8) >> 6) + 1) << 4), m = new Array(nWords), w = new Array(64), i;
+    for (i = 0; i < nWords; i++) m[i] = 0;
+    for (i = 0; i < len; i++) m[i >> 2] |= ascii.charCodeAt(i) << ((3 - (i & 3)) * 8);
+    m[len >> 2] |= 0x80 << ((3 - (len & 3)) * 8);
+    m[nWords - 1] = len * 8;
+    for (var j = 0; j < nWords; j += 16) {
+      var a = H[0], b = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+      for (i = 0; i < 64; i++) {
+        if (i < 16) w[i] = m[j + i] | 0;
+        else {
+          var x = w[i - 15], y = w[i - 2];
+          w[i] = (((x >>> 7 | x << 25) ^ (x >>> 18 | x << 14) ^ (x >>> 3)) + w[i - 16] +
+            ((y >>> 17 | y << 15) ^ (y >>> 19 | y << 13) ^ (y >>> 10)) + w[i - 7]) | 0;
+        }
+        var t1 = (h + ((e >>> 6 | e << 26) ^ (e >>> 11 | e << 21) ^ (e >>> 25 | e << 7)) +
+          ((e & f) ^ (~e & g)) + SHA_K[i] + w[i]) | 0;
+        var t2 = (((a >>> 2 | a << 30) ^ (a >>> 13 | a << 19) ^ (a >>> 22 | a << 10)) +
+          ((a & b) ^ (a & c) ^ (b & c))) | 0;
+        h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+      }
+      H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0;
+      H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+    }
+    return H;
+  }
+  function leadingZeroBits(words) {
+    var z = 0;
+    for (var i = 0; i < words.length; i++) {
+      var c = Math.clz32(words[i]);
+      z += c;
+      if (c < 32) break;
+    }
+    return z;
+  }
+  // Busca el nonce en tandas para no congelar la pantalla.
+  function solveChallenge(ch) {
+    return new Promise(function (resolve, reject) {
+      var bits = ch.bits | 0, prefix = String(ch.salt) + ":", nonce = 0;
+      if (bits < 1 || bits > 26) return reject(new Error("desafío inválido"));
+      (function chunk() {
+        for (var end = nonce + 5000; nonce < end; nonce++) {
+          if (leadingZeroBits(sha256Words(prefix + nonce)) >= bits) return resolve(String(nonce));
+        }
+        setTimeout(chunk, 0);
+      })();
+    });
   }
 
   // Modelo "largo" ⇄ objeto compacto con claves cortas
@@ -333,6 +494,16 @@
     setText(card, "place", data.place);
     $('[data-row="place"]', card).hidden = !data.place;
 
+    // Foto (opcional)
+    var photoRow = $('[data-row="photo"]', card);
+    photoRow.hidden = !data.photo;
+    card.classList.toggle("has-photo", !!data.photo);
+    if (data.photo) {
+      var img = $('[data-img="photo"]', card);
+      img.src = data.photo;
+      img.alt = "Foto de " + data.name;
+    }
+
     // Mapa: link cargado, o búsqueda por la dirección
     var maps = $('[data-a="maps"]', card);
     var mapsUrl = data.maps || (data.place ? "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(data.place) : "");
@@ -401,30 +572,79 @@
     return hashString(data.name + "|" + data.date + "|" + data.time + "|" + data.phone);
   }
 
+  function challengeUrl(endpoint) {
+    var u = new URL(endpoint);
+    u.pathname = u.pathname.replace(/\/+$/, "") + "/challenge";
+    u.search = "";
+    return u.href;
+  }
+
   function setupApiRsvp(card, data) {
     var form = $('[data-a="api-form"]', card);
     var endpoint = sameOriginEndpoint(data.rsvp);
     if (!endpoint) return;
     form.hidden = false;
     var status = $('[data-f="apiStatus"]', card);
+    var robot = $('[data-a="robot"]', form);
+    var robotStatus = $('[data-f="robotStatus"]', form);
+    var submitBtn = form.querySelector('button[type="submit"]');
+    var proof = null; // { salt, bits, sig, nonce }
+
+    function resetRobot(msg) {
+      proof = null;
+      robot.checked = false;
+      robot.disabled = false;
+      robotStatus.textContent = msg || "";
+    }
+
+    robot.addEventListener("change", function () {
+      if (proof) { robot.checked = true; return; } // ya verificado: queda tildado
+      if (!robot.checked) return;
+      robot.disabled = true;
+      robotStatus.textContent = "Verificando…";
+      fetch(challengeUrl(endpoint), { headers: { Accept: "application/json" } })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function (ch) {
+          return solveChallenge(ch).then(function (nonce) {
+            proof = { salt: ch.salt, bits: ch.bits, sig: ch.sig, nonce: nonce };
+            robot.disabled = false;
+            robotStatus.textContent = "✓ Verificado";
+            status.textContent = "";
+          });
+        })
+        .catch(function () { resetRobot("No se pudo verificar. Probá de nuevo."); });
+    });
+
     form.addEventListener("submit", function (ev) {
       ev.preventDefault();
       var who = form.elements.who.value.trim();
       if (!who) { status.textContent = "Escribí tu nombre."; form.elements.who.focus(); return; }
+      if (!proof) {
+        status.textContent = robot.disabled ? "Esperá un segundo, estamos verificando…" : "Marcá «No soy un robot».";
+        if (!robot.disabled) robot.focus();
+        return;
+      }
       var count = parseInt($('[data-f="count"]', card).textContent, 10) || 1;
       var msg = $('[data-f="rsvpText"]', card).value;
       var going = !/no voy a poder/i.test(msg);
+      var body = {
+        event: eventId(data), name: who.slice(0, 60), count: count, going: going, note: msg.slice(0, 300),
+        website: form.elements.website.value, pow: proof
+      };
+      proof = null; // cada desafío sirve una sola vez
+      submitBtn.disabled = true;
       status.textContent = "Enviando…";
       fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ event: eventId(data), name: who.slice(0, 60), count: count, going: going, note: msg.slice(0, 300) })
+        body: JSON.stringify(body)
       }).then(function (r) {
         if (!r.ok) throw new Error(r.status);
         status.textContent = going ? "¡Listo! Quedó registrada tu confirmación 🎉" : "Gracias por avisar 💛";
-        form.querySelector("button").disabled = true;
       }).catch(function () {
-        status.textContent = "No se pudo enviar. Probá confirmar por WhatsApp.";
+        submitBtn.disabled = false;
+        resetRobot();
+        status.textContent = "No se pudo enviar. Probá de nuevo o confirmá por WhatsApp.";
       });
     });
   }
@@ -740,7 +960,8 @@
     var preview = $("#preview");
     var touched = {};
     var submitted = false;
-    var currentLink = "", currentData = null;
+    var currentLink = "", qrLink = "", currentData = null;
+    var photo = null; // { param, dataUrl } de la foto comprimida
 
     if (navigator.share) $("#btn-share").hidden = false;
 
@@ -806,6 +1027,7 @@
       if (pd.end && !isValidTime(pd.end)) pd.end = "";
       if (pd.maps && !safeHttpUrl(pd.maps)) pd.maps = "";
       if (!(pd.age >= 1 && pd.age <= 120)) pd.age = null;
+      pd.photo = photo ? photo.dataUrl : "";
       return pd;
     }
 
@@ -845,13 +1067,16 @@
       if (!ok) { currentLink = ""; currentData = null; return; }
 
       var payload = encodeData(d);
+      var photoPart = photo ? "&f=" + photo.param : "";
       currentData = d;
-      currentLink = baseUrl() + "#i=" + payload;
+      qrLink = baseUrl() + "#i=" + payload;  // la foto no entra en un QR
+      currentLink = qrLink + photoPart;
       $("#out-link").value = currentLink;
-      $("#out-edit").value = baseUrl() + "#e=" + payload;
+      $("#out-edit").value = baseUrl() + "#e=" + payload + photoPart;
       $("#btn-open").href = currentLink;
       $("#btn-wa").href = "https://wa.me/?text=" + encodeURIComponent(shareText(d, currentLink));
-      renderQr(currentLink);
+      $("#qr-photo-note").hidden = !photo;
+      renderQr(qrLink);
 
       var admin = $("#rsvp-admin");
       var endpoint = sameOriginEndpoint(d.rsvp);
@@ -919,6 +1144,7 @@
     });
     $("#btn-reset").addEventListener("click", function () {
       form.reset();
+      setPhoto(null);
       f.color.disabled = true;
       touched = {};
       submitted = false;
@@ -964,8 +1190,8 @@
     });
 
     $("#btn-qr").addEventListener("click", function () {
-      if (!currentLink) return;
-      var qr = QR.encode(currentLink, "M");
+      if (!qrLink) return;
+      var qr = QR.encode(qrLink, "M");
       var canvas = document.createElement("canvas");
       QR.toCanvas(qr, canvas, { scale: Math.max(8, Math.ceil(1024 / (qr.size + 8))), margin: 4 });
       var name = "qr-cumple-" + slugify(currentData && currentData.name) + ".png";
@@ -978,7 +1204,50 @@
       }
     });
 
+    // ---- Foto ----
+    var photoInput = $("#f-photo");
+    function setPhoto(p, info) {
+      photo = p;
+      var thumb = $("#photo-thumb");
+      thumb.hidden = !p;
+      $("#photo-empty").hidden = !!p;
+      if (p) thumb.src = p.dataUrl; else thumb.removeAttribute("src");
+      $("#btn-photo-remove").hidden = !p;
+      var infoEl = $("#photo-info");
+      infoEl.hidden = !info;
+      infoEl.textContent = info || "";
+      $("#e-photo").hidden = true;
+      photoInput.value = "";
+    }
+    function photoError(msg) {
+      var e = $("#e-photo");
+      e.textContent = msg;
+      e.hidden = false;
+    }
+    photoInput.addEventListener("change", function () {
+      var file = photoInput.files && photoInput.files[0];
+      if (!file) return;
+      if (!/^image\//.test(file.type) && file.type) { photoError("Ese archivo no es una imagen."); photoInput.value = ""; return; }
+      if (file.size > 25 * 1024 * 1024) { photoError("La imagen es muy pesada (más de 25 MB)."); photoInput.value = ""; return; }
+      $("#photo-info").hidden = false;
+      $("#photo-info").textContent = "Procesando foto…";
+      compressPhoto(file).then(function (p) {
+        setPhoto(p, "Foto lista (" + (p.bytes / 1024).toFixed(1).replace(".", ",") + " KB dentro del link)");
+        update();
+      }).catch(function () {
+        $("#photo-info").hidden = true;
+        photoError("No pudimos leer esa imagen. Probá con una foto JPG o PNG.");
+        photoInput.value = "";
+      });
+    });
+    $("#btn-photo-remove").addEventListener("click", function () {
+      setPhoto(null);
+      update();
+      photoInput.focus();
+    });
+
     if (opts.prefill) fill(opts.prefill);
+    if (opts.prefillPhoto) setPhoto({ param: opts.prefillPhoto.param, dataUrl: opts.prefillPhoto.dataUrl });
     update();
   }
 
@@ -988,23 +1257,27 @@
   function readParams() {
     var hash = new URLSearchParams(location.hash.replace(/^#/, ""));
     var query = new URLSearchParams(location.search);
-    return { invite: hash.get("i") || query.get("i"), edit: hash.get("e") };
+    return { invite: hash.get("i") || query.get("i"), edit: hash.get("e"), photo: hash.get("f") || query.get("f") };
   }
 
   function route() {
     $("#loading").hidden = true;
     var p = readParams();
     if (p.invite !== null) {
-      try {
-        showInvite(decodeData(p.invite));
-        return;
-      } catch (e) {
-        showGenerator({ error: true });
+      var data;
+      try { data = decodeData(p.invite); } catch (e) { data = null; }
+      if (data) {
+        data.photo = decodePhoto(p.photo); // si la foto está rota, se ignora
+        showInvite(data);
         return;
       }
+      showGenerator({ error: true });
+      return;
     }
     if (p.edit !== null) {
-      try { showGenerator({ prefill: decodeData(p.edit) }); }
+      var photoUrl = decodePhoto(p.photo);
+      var prefillPhoto = photoUrl ? { param: p.photo, dataUrl: photoUrl } : null;
+      try { showGenerator({ prefill: decodeData(p.edit), prefillPhoto: prefillPhoto }); }
       catch (e) { showGenerator({ error: true }); }
       return;
     }
@@ -1018,7 +1291,8 @@
   });
 
   // Expuesto solo para pruebas
-  window.__invitacion = { encodeData: encodeData, decodeData: decodeData, buildIcs: buildIcs, normalizePhone: normalizePhone };
+  window.__invitacion = { encodeData: encodeData, decodeData: decodeData, buildIcs: buildIcs, normalizePhone: normalizePhone,
+    decodePhoto: decodePhoto, sha256Words: sha256Words, leadingZeroBits: leadingZeroBits };
 
   route();
 })();
