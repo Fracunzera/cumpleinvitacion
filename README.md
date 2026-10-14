@@ -35,7 +35,7 @@ Generador de invitaciones de cumpleaños **estático, gratis y sin backend**. Co
    - una foto, si querés (ver [la foto](#la-foto)),
    - fecha, hora y, si querés, hora de fin,
    - lugar y link de Google Maps,
-   - mensaje para los invitados,
+   - mensaje para los invitados (o tocá **✨ Sugerir mensaje** para que te proponga uno; ver [sugerencias con IA](#sugerencias-de-mensaje-con-ia)),
    - tu WhatsApp, que es donde te van a llegar las confirmaciones,
    - el tema (**Infantil**, **Elegante** o **Minimalista**) y, si querés, un color propio.
 3. A la derecha (o abajo, en el celular) se actualiza la **vista previa en vivo**. Con **✨ Ver ejemplo** se carga una fiesta de muestra.
@@ -85,6 +85,15 @@ La foto también viaja dentro del link, en un parámetro aparte (`&f=`), así qu
 - `f` = `w` + base64url(WebP) o `j` + base64url(JPEG). Al abrir la invitación se verifican los bytes del formato y se muestra con `<img src="data:…">`. Si la foto está rota, la invitación se abre igual, sin foto.
 - Con foto, el link pasa de ~350 a ~5.000 caracteres. WhatsApp y los navegadores lo manejan sin problema, pero **un QR no tiene capacidad para una foto**: el QR abre la misma invitación sin la foto (el generador lo avisa).
 
+### Sugerencias de mensaje con IA
+
+El botón **«✨ Sugerir mensaje»** (con tono automático, divertido, emotivo o formal) propone un texto en español rioplatense según la edad, el tema y el tono:
+
+- **Si el navegador trae IA incorporada** (por ejemplo, Chrome con Gemini Nano, mediante las APIs `LanguageModel` o `Writer`) y el modelo **ya está descargado**, el mensaje lo escribe esa IA. Corre **dentro del dispositivo**: sin API keys, sin costo y sin mandar nada afuera. Nunca se dispara la descarga del modelo (son varios GB).
+- **Si no** (hoy, la mayoría de los celulares), usa un generador propio que combina frases pensadas para chicos, adolescentes y adultos, con frases especiales para 1, 15, 18 y los cumpleaños redondos (30, 40, 50…). Funciona offline e igual en todos lados.
+
+Cada clic da otra idea, y **Deshacer** vuelve a lo que habías escrito. El código está en `assets/suggest.js`; para sumar frases, agregalas a las listas de `T` y `MILESTONES`.
+
 Gracias a `o`, la cuenta regresiva y el `.ics` son correctos aunque el invitado esté en otro huso horario: la hora se muestra tal como la escribiste y, si el invitado está en otra zona, se le aclara su hora local.
 
 Al cargar, todo lo que viene en el link se valida: los textos se insertan con `textContent` (nunca como HTML), los links de mapa solo pueden ser `http/https` y una CSP bloquea cualquier script o conexión externa. Si el hash está roto o incompleto, aparece un aviso amable y el generador.
@@ -97,6 +106,7 @@ assets/styles.css   estilos, temas (variables CSS) y modo claro/oscuro
 assets/app.js       lógica: codificación, generador, invitación, soplido, .ics
 assets/qr.js        generador de QR propio (MIT, sin dependencias)
 assets/confetti.js  confeti en <canvas> (MIT, sin dependencias)
+assets/suggest.js   sugerencias de mensaje (IA del navegador o plantillas)
 assets/og.jpg       imagen para la vista previa al compartir
 assets/favicon.svg, assets/icon-192.png
 extras/rsvp-server/ backend OPCIONAL (ver apéndice)

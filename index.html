@@ -145,6 +145,18 @@
             <label for="f-message">Mensaje para los invitados</label>
             <textarea id="f-message" name="message" rows="3" maxlength="400" aria-describedby="h-message" placeholder="Ej: ¡Vení a festejar conmigo! Habrá pelotero, torta y muchas sorpresas."></textarea>
             <p class="hint" id="h-message"><span id="message-count">0</span>/400 caracteres</p>
+            <div class="suggest">
+              <button type="button" id="btn-suggest" class="btn btn-soft btn-sm">✨ Sugerir mensaje</button>
+              <label for="f-tone" class="visually-hidden">Tono del mensaje sugerido</label>
+              <select id="f-tone" class="tone-select">
+                <option value="">Tono automático</option>
+                <option value="fun">Divertido</option>
+                <option value="warm">Emotivo</option>
+                <option value="formal">Formal</option>
+              </select>
+              <button type="button" id="btn-suggest-undo" class="btn btn-ghost btn-sm" hidden>Deshacer</button>
+            </div>
+            <p class="hint" id="suggest-status" role="status" aria-live="polite"></p>
           </div>
         </fieldset>
 
@@ -401,6 +413,7 @@
 
   <script src="assets/qr.js"></script>
   <script src="assets/confetti.js"></script>
+  <script src="assets/suggest.js"></script>
   <script src="assets/app.js"></script>
 </body>
 </html>

@@ -353,7 +353,7 @@ label, .label-like { display: block; font-weight: 600; margin-bottom: .3rem; fon
 .opt { font-weight: 400; color: var(--g-muted); font-size: .88em; }
 
 input[type="text"], input[type="number"], input[type="date"], input[type="time"],
-input[type="url"], input[type="tel"], textarea {
+input[type="url"], input[type="tel"], textarea, select {
   width: 100%; min-height: 46px;
   padding: .6rem .75rem;
   font: inherit; font-size: 16px; /* evita el zoom en iOS */
@@ -384,6 +384,12 @@ input[type="color"] {
   border-radius: 8px; background: var(--g-bg); cursor: pointer;
 }
 input[type="color"]:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Sugerir mensaje */
+.suggest { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; margin-top: .55rem; }
+.suggest .tone-select { width: auto; min-height: 40px; padding: .3rem 2rem .3rem .65rem;
+  background-image: linear-gradient(45deg, transparent 50%, var(--g-muted) 50%), linear-gradient(135deg, var(--g-muted) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 55%, calc(100% - 10px) 55%; background-size: 5px 5px; background-repeat: no-repeat; }
 
 /* Foto */
 .photo-picker { display: flex; align-items: center; gap: .85rem; }

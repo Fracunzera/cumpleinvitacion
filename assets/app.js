@@ -1204,6 +1204,41 @@
       }
     });
 
+    // ---- Sugerir mensaje (IA del navegador o plantillas) ----
+    var undoValue = null, lastSuggestion = "";
+    var suggestBtn = $("#btn-suggest"), undoBtn = $("#btn-suggest-undo"), suggestStatus = $("#suggest-status");
+    suggestBtn.addEventListener("click", function () {
+      if (!window.Sugerencias) return;
+      var d = readForm();
+      suggestBtn.disabled = true;
+      suggestStatus.textContent = "Pensando…";
+      Sugerencias.suggest({ name: d.name, age: d.age >= 1 && d.age <= 120 ? d.age : null, theme: d.theme, tone: $("#f-tone").value }, lastSuggestion)
+        .then(function (res) {
+          if (f.message.value !== lastSuggestion) undoValue = f.message.value; // guarda lo que había escrito
+          lastSuggestion = res.text;
+          f.message.value = res.text;
+          undoBtn.hidden = undoValue === null;
+          suggestBtn.textContent = "✨ Otra idea";
+          suggestStatus.textContent = res.source === "ai"
+            ? "Escrito con la IA de tu navegador (en tu dispositivo). Podés editarlo."
+            : "Sugerencia al azar. Podés editarla o pedir otra.";
+          update();
+        })
+        .catch(function () { suggestStatus.textContent = "No se pudo sugerir un mensaje. Probá de nuevo."; })
+        .then(function () { suggestBtn.disabled = false; });
+    });
+    undoBtn.addEventListener("click", function () {
+      if (undoValue === null) return;
+      f.message.value = undoValue;
+      undoValue = null;
+      lastSuggestion = "";
+      undoBtn.hidden = true;
+      suggestBtn.textContent = "✨ Sugerir mensaje";
+      suggestStatus.textContent = "Volviste a tu mensaje.";
+      update();
+      f.message.focus();
+    });
+
     // ---- Foto ----
     var photoInput = $("#f-photo");
     function setPhoto(p, info) {
