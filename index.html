@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="es-AR" data-public-url="">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; media-src 'self' blob: mediastream:; font-src 'self'; object-src 'none'; base-uri 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Estás invitado/a 🎂 · Invitación de cumpleaños</title>
+  <meta name="description" content="Abrí la invitación, soplá las velitas y confirmá tu asistencia. Invitaciones de cumpleaños gratis, sin registro y sin publicidad.">
+  <meta name="theme-color" content="#ff4f8b">
+  <meta name="color-scheme" content="light dark">
+
+  <!-- Vista previa al compartir (WhatsApp, Telegram, redes).
+       Los datos de cada fiesta viajan en el #hash y el servidor no los ve,
+       por eso esta tarjeta es genérica. og:image DEBE ser una URL absoluta:
+       si hacés un fork, cambiá el dominio por el tuyo. -->
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="es_AR">
+  <meta property="og:site_name" content="Invitación de cumpleaños">
+  <meta property="og:title" content="¡Estás invitado/a! 🎂">
+  <meta property="og:description" content="Tocá para abrir la invitación, soplá las velitas y confirmá si venís 🎉">
+  <meta property="og:image" content="https://invitacion.blucaro.site/assets/og.jpg">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Una torta de cumpleaños con velitas encendidas y el texto «¡Estás invitado/a!»">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="¡Estás invitado/a! 🎂">
+  <meta name="twitter:description" content="Tocá para abrir la invitación, soplá las velitas y confirmá si venís 🎉">
+  <meta name="twitter:image" content="https://invitacion.blucaro.site/assets/og.jpg">
+
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <noscript>
+    <div class="noscript">
+      <p><strong>Esta invitación necesita JavaScript</strong> para mostrarse. Activalo en tu navegador o abrí el link desde Chrome, Safari o Firefox.</p>
+    </div>
+  </noscript>
+
+  <div id="loading" class="loading" aria-hidden="true"><span class="loading-cake">🎂</span></div>
+
+  <!-- ================= GENERADOR (se muestra cuando no hay #i=) ================= -->
+  <div id="generator" class="gen" hidden>
+    <header class="gen-header">
+      <div class="gen-header-inner">
+        <img src="assets/favicon.svg" alt="" width="44" height="44" class="gen-logo">
+        <div>
+          <h1 class="gen-title">Creá tu invitación de cumpleaños</h1>
+          <p class="gen-lead">Gratis, sin registrarte y sin publicidad. Los datos de tu fiesta viajan <strong>dentro del link</strong>: no se guardan en ningún servidor.</p>
+        </div>
+      </div>
+    </header>
+
+    <div id="hash-error" class="notice notice-warn" role="alert" hidden>
+      <strong>No pudimos abrir esa invitación.</strong>
+      El enlace parece estar incompleto o dañado (a veces pasa al copiarlo a mano). Pedile a quien te lo mandó que te lo reenvíe. Mientras tanto, podés crear tu propia invitación acá abajo.
+    </div>
+
+    <div id="file-warning" class="notice" hidden>
+      <strong>Estás usando el archivo local.</strong>
+      Todo funciona, pero los links que generes apuntan a este archivo y solo abren en esta compu. Para compartirlos, publicá el sitio (GitHub Pages o tu servidor; ver README).
+    </div>
+
+    <main id="main" class="gen-layout">
+      <form id="form" class="gen-form" novalidate autocomplete="off" aria-labelledby="form-title">
+        <div class="gen-form-head">
+          <h2 id="form-title" class="section-title">Datos de la fiesta</h2>
+          <div class="gen-form-tools">
+            <button type="button" id="btn-example" class="btn btn-soft btn-sm">✨ Ver ejemplo</button>
+            <button type="button" id="btn-reset" class="btn btn-ghost btn-sm">Limpiar</button>
+          </div>
+        </div>
+        <p class="hint-top"><span aria-hidden="true">*</span> Campos obligatorios</p>
+
+        <fieldset>
+          <legend>¿Quién cumple?</legend>
+          <div class="field">
+            <label for="f-name">Nombre del/la cumpleañero/a <span class="req" aria-hidden="true">*</span></label>
+            <input id="f-name" name="name" type="text" required maxlength="60" autocomplete="off" aria-describedby="e-name" placeholder="Ej: Martina">
+            <p class="error" id="e-name" hidden></p>
+          </div>
+          <div class="field field-narrow">
+            <label for="f-age">Edad que cumple <span class="opt">(opcional)</span></label>
+            <input id="f-age" name="age" type="number" inputmode="numeric" min="1" max="120" step="1" aria-describedby="h-age e-age" placeholder="Ej: 7">
+            <p class="hint" id="h-age">Define cuántas velitas tiene la torta.</p>
+            <p class="error" id="e-age" hidden></p>
+          </div>
+          <div class="field">
+            <span class="label-like" id="l-photo">Foto <span class="opt">(opcional)</span></span>
+            <div class="photo-picker">
+              <span class="photo-thumb" aria-hidden="true"><img id="photo-thumb" alt="" hidden><span id="photo-empty">📷</span></span>
+              <div class="photo-actions">
+                <input id="f-photo" type="file" accept="image/*" class="visually-hidden" aria-labelledby="l-photo" aria-describedby="h-photo photo-info e-photo">
+                <label for="f-photo" class="btn btn-soft btn-sm">Elegir foto</label>
+                <button type="button" id="btn-photo-remove" class="btn btn-ghost btn-sm" hidden>Quitar</button>
+              </div>
+            </div>
+            <p class="hint" id="h-photo">Se recorta en círculo y se achica para que entre en el link. No se sube a ningún lado.</p>
+            <p class="hint hint-ok" id="photo-info" hidden></p>
+            <p class="error" id="e-photo" role="alert" hidden></p>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>¿Cuándo?</legend>
+          <div class="field-row">
+            <div class="field">
+              <label for="f-date">Fecha <span class="req" aria-hidden="true">*</span></label>
+              <input id="f-date" name="date" type="date" required aria-describedby="e-date">
+              <p class="error" id="e-date" hidden></p>
+            </div>
+            <div class="field">
+              <label for="f-time">Hora <span class="req" aria-hidden="true">*</span></label>
+              <input id="f-time" name="time" type="time" required aria-describedby="e-time">
+              <p class="error" id="e-time" hidden></p>
+            </div>
+            <div class="field">
+              <label for="f-end">Hasta <span class="opt">(opcional)</span></label>
+              <input id="f-end" name="end" type="time" aria-describedby="e-end">
+              <p class="error" id="e-end" hidden></p>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>¿Dónde?</legend>
+          <div class="field">
+            <label for="f-place">Lugar</label>
+            <input id="f-place" name="place" type="text" maxlength="140" placeholder="Ej: Salón Pelotero Feliz, Av. Siempreviva 742, Palermo">
+          </div>
+          <div class="field">
+            <label for="f-maps">Link de Google Maps <span class="opt">(opcional)</span></label>
+            <input id="f-maps" name="maps" type="url" inputmode="url" maxlength="400" aria-describedby="h-maps e-maps" placeholder="https://maps.app.goo.gl/…">
+            <p class="hint" id="h-maps">En Maps tocá «Compartir» → «Copiar vínculo». Si lo dejás vacío, «Cómo llegar» busca la dirección.</p>
+            <p class="error" id="e-maps" hidden></p>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Mensaje</legend>
+          <div class="field">
+            <label for="f-message">Mensaje para los invitados</label>
+            <textarea id="f-message" name="message" rows="3" maxlength="400" aria-describedby="h-message" placeholder="Ej: ¡Vení a festejar conmigo! Habrá pelotero, torta y muchas sorpresas."></textarea>
+            <p class="hint" id="h-message"><span id="message-count">0</span>/400 caracteres</p>
+            <div class="suggest">
+              <button type="button" id="btn-suggest" class="btn btn-soft btn-sm">✨ Sugerir mensaje</button>
+              <label for="f-tone" class="visually-hidden">Tono del mensaje sugerido</label>
+              <select id="f-tone" class="tone-select">
+                <option value="">Tono automático</option>
+                <option value="fun">Divertido</option>
+                <option value="warm">Emotivo</option>
+                <option value="formal">Formal</option>
+              </select>
+              <button type="button" id="btn-suggest-undo" class="btn btn-ghost btn-sm" hidden>Deshacer</button>
+            </div>
+            <p class="hint" id="suggest-status" role="status" aria-live="polite"></p>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Confirmaciones por WhatsApp</legend>
+          <div class="field">
+            <label for="f-phone">Tu número de WhatsApp <span class="opt">(recomendado)</span></label>
+            <input id="f-phone" name="phone" type="tel" inputmode="tel" maxlength="24" autocomplete="tel" aria-describedby="h-phone e-phone" placeholder="Ej: 11 2345-6789">
+            <p class="hint" id="h-phone">Con código de área, sin el 0 ni el 15. Si no ponés código de país, asumimos Argentina (+54 9).</p>
+            <p class="hint hint-ok" id="phone-normalized" hidden></p>
+            <p class="error" id="e-phone" hidden></p>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Estilo</legend>
+          <div class="themes" role="radiogroup" aria-label="Tema de la invitación">
+            <label class="theme-opt">
+              <input type="radio" name="theme" value="k" checked>
+              <span class="theme-card" data-theme="kids">
+                <span class="theme-swatch" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span class="theme-name">Infantil</span>
+                <span class="theme-desc">Colores alegres</span>
+              </span>
+            </label>
+            <label class="theme-opt">
+              <input type="radio" name="theme" value="e">
+              <span class="theme-card" data-theme="elegant">
+                <span class="theme-swatch" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span class="theme-name">Elegante</span>
+                <span class="theme-desc">Para adultos</span>
+              </span>
+            </label>
+            <label class="theme-opt">
+              <input type="radio" name="theme" value="m">
+              <span class="theme-card" data-theme="minimal">
+                <span class="theme-swatch" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span class="theme-name">Minimalista</span>
+                <span class="theme-desc">Simple y limpio</span>
+              </span>
+            </label>
+          </div>
+          <div class="field field-inline">
+            <input id="f-usecolor" type="checkbox">
+            <label for="f-usecolor">Usar un color propio</label>
+            <input id="f-color" name="color" type="color" value="#7b5cff" aria-label="Color principal" disabled>
+          </div>
+        </fieldset>
+
+        <details class="advanced">
+          <summary>Opciones avanzadas</summary>
+          <div class="field">
+            <label for="f-rsvp">Endpoint propio de confirmaciones <span class="opt">(opcional)</span></label>
+            <input id="f-rsvp" name="rsvp" type="text" maxlength="120" aria-describedby="h-rsvp e-rsvp" placeholder="/api/rsvp">
+            <p class="hint" id="h-rsvp">Solo si instalaste el backend opcional en tu servidor (ver README). Tiene que ser del mismo dominio. Dejalo vacío para usar solo WhatsApp.</p>
+            <p class="error" id="e-rsvp" hidden></p>
+          </div>
+        </details>
+
+        <button type="submit" class="btn btn-primary btn-block">Generar invitación</button>
+      </form>
+
+      <section class="gen-preview" aria-labelledby="preview-title">
+        <div class="gen-preview-sticky">
+          <h2 id="preview-title" class="section-title">Vista previa <span class="badge">en vivo</span></h2>
+          <div class="preview-frame">
+            <div id="preview" class="invite-root preview" data-theme="kids" inert></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="result" class="gen-result" aria-labelledby="result-title" tabindex="-1">
+        <h2 id="result-title" class="section-title">Tu link</h2>
+        <p id="result-empty" class="result-empty">Completá el nombre, la fecha y la hora para obtener el link.</p>
+        <div id="result-body" hidden>
+          <label for="out-link" class="visually-hidden">Link de la invitación</label>
+          <div class="link-box">
+            <input id="out-link" type="text" readonly>
+            <button type="button" id="btn-copy" class="btn btn-primary">Copiar link</button>
+          </div>
+          <p id="copy-status" class="status-msg" role="status" aria-live="polite"></p>
+          <div class="share-row">
+            <a id="btn-wa" class="btn btn-wa" href="#" target="_blank" rel="noopener noreferrer">
+              <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.8-1.4.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.7.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.3-.2-.5-.3Z"/></svg>
+              Compartir por WhatsApp
+            </a>
+            <button type="button" id="btn-share" class="btn btn-soft" hidden>Compartir…</button>
+            <a id="btn-open" class="btn btn-soft" href="#" target="_blank" rel="noopener">Abrir invitación ↗</a>
+          </div>
+          <div class="qr-box">
+            <canvas id="qr" width="264" height="264" role="img" aria-label="Código QR con el link de la invitación"></canvas>
+            <div class="qr-side">
+              <p><strong>Código QR</strong></p>
+              <p class="hint">Para imprimir en una tarjeta o mostrar en pantalla.</p>
+              <p class="hint" id="qr-photo-note" hidden>El QR abre la invitación sin la foto: una foto no entra en un código QR.</p>
+              <button type="button" id="btn-qr" class="btn btn-soft">Descargar QR (PNG)</button>
+            </div>
+          </div>
+          <details class="edit-link">
+            <summary>Link para editar más tarde</summary>
+            <p class="hint">Guardalo para vos (no lo compartas): abre este formulario con tus datos cargados.</p>
+            <label for="out-edit" class="visually-hidden">Link para editar</label>
+            <div class="link-box">
+              <input id="out-edit" type="text" readonly>
+              <button type="button" id="btn-copy-edit" class="btn btn-soft">Copiar</button>
+            </div>
+          </details>
+          <p id="rsvp-admin" class="hint rsvp-admin" hidden></p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="gen-footer">
+      <p>Hecho con 🎂 · Software libre (MIT) · Sin cookies, sin analytics, sin base de datos.</p>
+    </footer>
+  </div>
+
+  <!-- ================= INVITACIÓN (se muestra cuando hay #i=...) ================= -->
+  <div id="invite" class="invite-root invite-page" data-theme="kids" hidden>
+    <main class="invite-main">
+      <section id="stage" class="stage" aria-labelledby="stage-title">
+        <p class="eyebrow">Tenés una invitación 💌</p>
+        <h1 id="stage-title" class="stage-title">Cumple de <span data-f="name"></span></h1>
+        <p id="stage-hint" class="stage-hint">Soplá las velitas para abrirla</p>
+
+        <div class="cake" id="cake">
+          <div class="candles" id="candles"></div>
+          <svg class="cake-svg" viewBox="0 0 320 200" aria-hidden="true" focusable="false">
+            <ellipse class="plate" cx="160" cy="186" rx="152" ry="13"/>
+            <path class="tier1" d="M40 125 V172 A120 16 0 0 0 280 172 V125 Z"/>
+            <ellipse class="tier1-top" cx="160" cy="125" rx="120" ry="16"/>
+            <path class="frosting1" d="M40 125 A120 16 0 0 0 280 125 V133.0 L280.0 133.0 C279.0 151.2 266.0 158.6 265.0 140.4 L265.0 140.4 Q257.5 144.7 250.0 143.1 L250.0 143.1 C249.0 165.5 236.0 167.3 235.0 144.9 L235.0 144.9 Q227.5 148.5 220.0 146.2 L220.0 146.2 C219.0 154.6 206.0 155.5 205.0 147.1 L205.0 147.1 Q197.5 150.4 190.0 147.7 L190.0 147.7 C189.0 156.1 176.0 156.5 175.0 148.1 L175.0 148.1 Q167.5 151.1 160.0 148.2 L160.0 148.2 C159.0 162.2 146.0 162.1 145.0 148.1 L145.0 148.1 Q137.5 150.9 130.0 147.7 L130.0 147.7 C129.0 161.7 116.0 161.1 115.0 147.1 L115.0 147.1 Q107.5 149.6 100.0 146.2 L100.0 146.2 C99.0 154.6 86.0 153.3 85.0 144.9 L85.0 144.9 Q77.5 147.0 70.0 143.1 L70.0 143.1 C69.0 165.5 56.0 162.8 55.0 140.4 L55.0 140.4 Q47.5 139.7 40.0 133.0 Z"/>
+            <path class="tier2" d="M72 72 V120 A88 13 0 0 0 248 120 V72 Z"/>
+            <ellipse class="tier2-top" cx="160" cy="72" rx="88" ry="13"/>
+            <path class="frosting2" d="M72 72 A88 13 0 0 0 248 72 V79.0 L248.0 79.0 C247.0 87.4 234.3 94.2 233.3 85.8 L233.3 85.8 Q226.0 90.0 218.7 88.2 L218.7 88.2 C217.7 96.6 205.0 98.1 204.0 89.7 L204.0 89.7 Q196.7 93.2 189.3 90.6 L189.3 90.6 C188.3 113.0 175.7 113.6 174.7 91.2 L174.7 91.2 Q167.3 94.3 160.0 91.3 L160.0 91.3 C159.0 105.3 146.3 105.2 145.3 91.2 L145.3 91.2 Q138.0 93.9 130.7 90.6 L130.7 90.6 C129.7 103.2 117.0 102.3 116.0 89.7 L116.0 89.7 Q108.7 92.0 101.3 88.2 L101.3 88.2 C100.3 96.6 87.7 94.2 86.7 85.8 L86.7 85.8 Q79.3 85.4 72.0 79.0 Z"/>
+            <g class="sprinkles">
+              <rect x="70" y="150" width="8" height="3" rx="1.5" transform="rotate(-25 74 151)"/>
+              <rect x="110" y="160" width="8" height="3" rx="1.5" transform="rotate(30 114 161)"/>
+              <rect x="150" y="152" width="8" height="3" rx="1.5" transform="rotate(-10 154 153)"/>
+              <rect x="192" y="162" width="8" height="3" rx="1.5" transform="rotate(40 196 163)"/>
+              <rect x="232" y="150" width="8" height="3" rx="1.5" transform="rotate(-35 236 151)"/>
+              <rect x="100" y="98" width="8" height="3" rx="1.5" transform="rotate(20 104 99)"/>
+              <rect x="146" y="106" width="8" height="3" rx="1.5" transform="rotate(-30 150 107)"/>
+              <rect x="190" y="98" width="8" height="3" rx="1.5" transform="rotate(15 194 99)"/>
+              <rect x="222" y="108" width="8" height="3" rx="1.5" transform="rotate(-20 226 109)"/>
+            </g>
+          </svg>
+        </div>
+
+        <div id="mic-meter" class="mic-meter" hidden>
+          <span class="visually-hidden">Fuerza del soplido</span>
+          <div class="mic-meter-bar"><div id="mic-meter-fill" class="mic-meter-fill"></div></div>
+        </div>
+        <p id="stage-status" class="stage-status" role="status" aria-live="polite"></p>
+
+        <div class="stage-actions">
+          <button type="button" id="btn-mic" class="btn btn-accent btn-lg">
+            <span aria-hidden="true">🎤</span> Soplar con el micrófono
+          </button>
+          <p class="stage-or">o tocá cada velita para apagarla</p>
+          <button type="button" id="btn-skip" class="btn-link">Saltar y ver la invitación</button>
+        </div>
+        <p class="privacy-note">El micrófono se usa solo para detectar el soplido, dentro de tu teléfono. No se graba ni se envía nada.</p>
+      </section>
+
+      <div id="card-slot" hidden></div>
+    </main>
+    <footer class="invite-footer">
+      <a id="make-own" href="./">¿Querés hacer una invitación así? Creala gratis</a>
+    </footer>
+  </div>
+
+  <!-- Plantilla de la tarjeta (se usa en la invitación y en la vista previa) -->
+  <template id="tpl-card">
+    <article class="card">
+      <div class="card-deco" aria-hidden="true"></div>
+      <div class="card-photo" data-row="photo" hidden><img data-img="photo" alt="" width="144" height="144" decoding="async"></div>
+      <p class="eyebrow">¡Estás invitado/a!</p>
+      <h1 class="card-title" tabindex="-1"><span class="card-title-pre">Cumple de</span> <span class="card-name" data-f="name"></span></h1>
+      <p class="card-age" data-f="age" hidden></p>
+      <p class="card-message" data-f="message" hidden></p>
+
+      <ul class="details">
+        <li>
+          <span class="details-ico" aria-hidden="true">📅</span>
+          <span><span class="details-label">Fecha</span><span data-f="dateLong"></span></span>
+        </li>
+        <li>
+          <span class="details-ico" aria-hidden="true">🕗</span>
+          <span><span class="details-label">Hora</span><span data-f="timeText"></span><small class="details-tz" data-f="tzNote" hidden></small></span>
+        </li>
+        <li data-row="place" hidden>
+          <span class="details-ico" aria-hidden="true">📍</span>
+          <span><span class="details-label">Lugar</span><span data-f="place"></span></span>
+        </li>
+      </ul>
+
+      <div class="countdown-wrap">
+        <p class="countdown-title" data-f="cdTitle">Faltan</p>
+        <div class="countdown" role="timer" aria-live="off" data-cd>
+          <div class="cd-cell"><span class="cd-num" data-c="d">0</span><span class="cd-lbl">días</span></div>
+          <div class="cd-cell"><span class="cd-num" data-c="h">0</span><span class="cd-lbl">horas</span></div>
+          <div class="cd-cell"><span class="cd-num" data-c="m">0</span><span class="cd-lbl">min</span></div>
+          <div class="cd-cell"><span class="cd-num" data-c="s">0</span><span class="cd-lbl">seg</span></div>
+        </div>
+        <p class="countdown-msg" data-f="cdMsg" hidden></p>
+      </div>
+
+      <section class="rsvp" aria-label="Confirmar asistencia">
+        <h2 class="rsvp-title">¿Venís?</h2>
+        <div class="stepper">
+          <span class="stepper-label" data-id="count-label">¿Cuántos van?</span>
+          <div class="stepper-ctrl">
+            <button type="button" class="stepper-btn" data-a="minus" aria-label="Uno menos">−</button>
+            <output class="stepper-val" data-f="count" aria-live="polite">1</output>
+            <button type="button" class="stepper-btn" data-a="plus" aria-label="Uno más">+</button>
+          </div>
+        </div>
+        <label class="rsvp-label">Mensaje (podés editarlo)
+          <textarea class="rsvp-text" data-f="rsvpText" rows="2" maxlength="300"></textarea>
+        </label>
+        <a class="btn btn-accent btn-block btn-lg" data-a="rsvp" href="#" target="_blank" rel="noopener noreferrer">
+          <span aria-hidden="true">✅</span> Confirmo asistencia
+        </a>
+        <button type="button" class="btn-link rsvp-decline" data-a="decline">No voy a poder ir</button>
+
+        <form class="rsvp-api" data-a="api-form" novalidate hidden>
+          <p class="rsvp-api-title">O dejá tu confirmación acá:</p>
+          <label>Tu nombre <input name="who" type="text" maxlength="60" required></label>
+          <!-- Campo trampa: las personas no lo ven; los bots suelen completarlo -->
+          <div class="hp" aria-hidden="true">
+            <label>No completar <input name="website" type="text" tabindex="-1" autocomplete="off"></label>
+          </div>
+          <div class="robot">
+            <label class="robot-check">
+              <input type="checkbox" data-a="robot">
+              <span>No soy un robot</span>
+            </label>
+            <span class="robot-side" aria-hidden="true">🤖<small>Anti-spam propio</small></span>
+          </div>
+          <p class="robot-status" data-f="robotStatus" role="status" aria-live="polite"></p>
+          <button type="submit" class="btn btn-soft">Enviar confirmación</button>
+          <p class="status-msg" data-f="apiStatus" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <div class="actions">
+        <button type="button" class="btn btn-soft" data-a="ics"><span aria-hidden="true">🗓️</span> Agregar al calendario</button>
+        <a class="btn btn-soft" data-a="maps" href="#" target="_blank" rel="noopener noreferrer" hidden><span aria-hidden="true">🗺️</span> Cómo llegar</a>
+        <button type="button" class="btn btn-soft" data-a="confetti"><span aria-hidden="true">🎉</span> Más confeti</button>
+      </div>
+    </article>
+  </template>
+
+  <script src="assets/qr.js"></script>
+  <script src="assets/confetti.js"></script>
+  <script src="assets/suggest.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
