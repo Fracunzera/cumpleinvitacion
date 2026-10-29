@@ -22,7 +22,7 @@ Generador de invitaciones de cumpleaños **estático, gratis y sin backend**. Co
 - [Deploy en un VPS con nginx](#2-vps-con-nginx-invitacionblucarosite)
 - [La vista previa en WhatsApp](#la-vista-previa-en-whatsapp)
 - [Personalización](#personalización)
-- [Apéndice: backend opcional de confirmaciones](#apéndice-backend-opcional-de-confirmaciones)
+- [Apéndice: backend opcional (confirmaciones y links cortos)](#apéndice-backend-opcional-confirmaciones-y-links-cortos)
 - [Licencia](#licencia)
 
 ---
@@ -55,27 +55,28 @@ Una sola página (`index.html`) decide qué mostrar según el hash de la URL:
 | URL | Qué muestra |
 |---|---|
 | `https://sitio/` | El generador |
-| `https://sitio/#i=eyJ2Ijox…` | La invitación |
-| `https://sitio/#e=eyJ2Ijox…` | El generador con esos datos cargados, para editar |
-| `https://sitio/#i=eyJ2Ijox…&f=wUklG…` | La invitación con foto |
+| `https://sitio/#i=Mh9NYXJ0…` | La invitación |
+| `https://sitio/#e=Mh9NYXJ0…` | El generador con esos datos cargados, para editar |
+| `https://sitio/#i=Mh9NYXJ0…&f=wUklG…` | La invitación con foto |
+| `https://sitio/?s=k3f9a2` | La invitación, con los datos guardados en tu servidor ([link corto](#links-cortos), opcional) |
 
-Los datos se serializan así: **objeto → JSON con claves cortas → UTF-8 → base64url**. Por ejemplo:
+Los datos se serializan así: **campos en un orden fijo, separados por el carácter `\x1f` → UTF-8 → base64url**. No hay claves ni comillas, la fecha va como `AAAAMMDD`, las horas como `HHMM` y los campos vacíos del final se omiten. Por ejemplo:
 
-```json
-{"v":1,"n":"Martina","a":7,"d":"2026-11-07","t":"17:00","e":"20:00",
- "p":"Pelotero Arcoíris, Av. Corrientes 1234","x":"¡Vení a festejar!",
- "w":"5491123456789","s":"k","o":180}
+```
+2␟Martina␟20261107␟1700␟180␟7␟2000␟5491123456789␟Pelotero Arcoíris, Av. Corrientes 1234␟¡Vení a festejar!
 ```
 
-| Clave | Dato | Clave | Dato |
+| # | Dato | # | Dato |
 |---|---|---|---|
-| `v` | versión del formato | `p` | lugar |
-| `n` | nombre | `m` | link de mapa (solo `http/https`) |
-| `a` | edad | `x` | mensaje |
-| `d` | fecha `AAAA-MM-DD` | `w` | WhatsApp (solo dígitos) |
-| `t` | hora `HH:MM` | `s` | tema: `k` infantil, `e` elegante, `m` minimalista |
-| `e` | hora de fin (opcional) | `c` | color propio `#rrggbb` |
-| `o` | offset horario de quien creó la invitación (minutos) | `r` | endpoint de RSVP propio (opcional) |
+| 0 | versión del formato (`2`) | 7 | WhatsApp (solo dígitos) |
+| 1 | nombre | 8 | lugar |
+| 2 | fecha `AAAAMMDD` | 9 | mensaje |
+| 3 | hora `HHMM` | 10 | link de mapa (solo `http/https`) |
+| 4 | offset horario de quien creó la invitación (minutos) | 11 | tema: vacío infantil, `e` elegante, `m` minimalista |
+| 5 | edad | 12 | color propio `rrggbb` |
+| 6 | hora de fin `HHMM` (opcional) | 13 | endpoint de RSVP propio (opcional) |
+
+Así el link queda alrededor de un 30 % más corto que con JSON. Los links viejos (versión 1, un JSON con claves cortas como `{"v":1,"n":"Martina",…}`) se siguen abriendo igual.
 
 ### La foto
 
@@ -83,7 +84,7 @@ La foto también viaja dentro del link, en un parámetro aparte (`&f=`), así qu
 
 - El navegador de quien crea la invitación la recorta en cuadrado (en las fotos verticales, un poco más arriba del centro, para no cortar caras), la achica (hasta 176 px) y la comprime en WebP o JPEG hasta que pese **menos de 3,6 KB**. Nunca se sube a ningún lado.
 - `f` = `w` + base64url(WebP) o `j` + base64url(JPEG). Al abrir la invitación se verifican los bytes del formato y se muestra con `<img src="data:…">`. Si la foto está rota, la invitación se abre igual, sin foto.
-- Con foto, el link pasa de ~350 a ~5.000 caracteres. WhatsApp y los navegadores lo manejan sin problema, pero **un QR no tiene capacidad para una foto**: el QR abre la misma invitación sin la foto (el generador lo avisa).
+- Con foto, el link pasa de ~250 a ~5.000 caracteres. WhatsApp y los navegadores lo manejan sin problema, pero **un QR no tiene capacidad para una foto**: el QR abre la misma invitación sin la foto (el generador lo avisa). Si usás [links cortos](#links-cortos), el link queda en ~40 caracteres y el QR sí incluye la foto.
 
 ### Sugerencias de mensaje con IA
 
@@ -94,7 +95,7 @@ El botón **«✨ Sugerir mensaje»** (con tono automático, divertido, emotivo 
 
 Cada clic da otra idea, y **Deshacer** vuelve a lo que habías escrito. El código está en `assets/suggest.js`; para sumar frases, agregalas a las listas de `T` y `MILESTONES`.
 
-Gracias a `o`, la cuenta regresiva y el `.ics` son correctos aunque el invitado esté en otro huso horario: la hora se muestra tal como la escribiste y, si el invitado está en otra zona, se le aclara su hora local.
+Gracias al offset horario (campo 4), la cuenta regresiva y el `.ics` son correctos aunque el invitado esté en otro huso horario: la hora se muestra tal como la escribiste y, si el invitado está en otra zona, se le aclara su hora local.
 
 Al cargar, todo lo que viene en el link se valida: los textos se insertan con `textContent` (nunca como HTML), los links de mapa solo pueden ser `http/https` y una CSP bloquea cualquier script o conexión externa. Si el hash está roto o incompleto, aparece un aviso amable y el generador.
 
@@ -201,13 +202,15 @@ Hay dos cosas a tener en cuenta:
 
 ### Alternativa: vista previa personalizada con `?i=` (trade-off de privacidad)
 
-La página también acepta los datos en la query string: `https://sitio/?i=eyJ2Ijox…` (es el mismo valor que va después de `#i=`). Con eso, un servidor **puede** leer los datos y poner el nombre en la tarjeta, por ejemplo «🎂 ¡Estás invitado/a al cumple de Martina!».
+La página también acepta los datos en la query string: `https://sitio/?i=Mh9NYXJ0…` (es el mismo valor que va después de `#i=`). Con eso, un servidor **puede** leer los datos y poner el nombre en la tarjeta, por ejemplo «🎂 ¡Estás invitado/a al cumple de Martina!».
 
 - ✅ La vista previa en WhatsApp muestra el nombre y la fecha.
 - ❌ Los datos de la fiesta (nombre, dirección, teléfono) **llegan al servidor y quedan en los logs** de nginx, del proxy, etc. Se pierde la privacidad por diseño.
 - ❌ Necesita algo del lado del servidor (en un sitio estático puro como GitHub Pages no hay forma de cambiar las etiquetas). El backend opcional de abajo ya lo hace.
 
 Para usarlo, generá el link normal y reemplazá `#i=` por `?i=`. Si lo activás, considerá no guardar la query en los logs de nginx (ver la configuración del apéndice).
+
+Los [links cortos](#links-cortos) (`?s=`) también traen la vista previa personalizada, sin poner los datos en la URL.
 
 ## Personalización
 
@@ -223,9 +226,9 @@ Para usarlo, generá el link normal y reemplazá `#i=` por `?i=`. Si lo activás
 
 ---
 
-## Apéndice: backend opcional de confirmaciones
+## Apéndice: backend opcional (confirmaciones y links cortos)
 
-> **Totalmente opcional.** El sitio funciona 100% sin esto: las confirmaciones llegan por WhatsApp. Esto es para quien tenga un VPS y quiera además **una lista de confirmados** en un solo lugar.
+> **Totalmente opcional.** El sitio funciona 100% sin esto: las confirmaciones llegan por WhatsApp y los links llevan todos los datos adentro. Esto es para quien tenga un VPS (o un server en casa) y quiera además **una lista de confirmados** en un solo lugar y/o **links cortos**.
 
 `extras/rsvp-server/server.py` es un servidor chiquito en Python 3 (solo biblioteca estándar, sin `pip install`) con SQLite:
 
@@ -233,6 +236,7 @@ Para usarlo, generá el link normal y reemplazá `#i=` por `?i=`. Si lo activás
 - `POST /api/rsvp`: guarda una confirmación `{event, name, count, going, note, pow}`. Valida los datos y el desafío, limita el tamaño y aplica un rate limit por IP.
 - `GET /api/rsvp?token=…`: lista los eventos. Con `&event=<id>` muestra la tabla de confirmados de esa fiesta. Agregando `&format=json` devuelve JSON.
 - `GET /?i=…`: sirve `index.html` con `og:title`/`og:description` personalizados (el modo con vista previa personalizada de arriba).
+- `POST /api/s`, `GET /api/s/<código>` y `GET /?s=<código>`: [links cortos](#links-cortos).
 
 ### "No soy un robot" (anti-spam propio)
 
@@ -269,6 +273,8 @@ Environment=PORT=8787
 # firmar desafíos (si no se pone, se genera una al iniciar).
 # Environment=RSVP_POW_BITS=17
 # Environment=RSVP_SECRET=otra-clave-larga
+# Días después de la fiesta en que se borra cada link corto (default: 60)
+# Environment=SHORT_DAYS=60
 ExecStart=/usr/bin/python3 /var/www/invitacion/extras/rsvp-server/server.py
 Restart=on-failure
 NoNewPrivileges=true
@@ -286,16 +292,17 @@ sudo systemctl daemon-reload && sudo systemctl enable --now invitacion-rsvp
 Agregá esto dentro del `server { … }` de nginx:
 
 ```nginx
-    location /api/rsvp {     # incluye /api/rsvp/challenge
+    location /api/ {         # /api/rsvp (confirmaciones) y /api/s (links cortos)
         proxy_pass http://127.0.0.1:8787;
         proxy_set_header X-Real-IP $remote_addr;
-        client_max_body_size 8k;
+        client_max_body_size 20k;   # un link corto con foto pesa ~5 KB
     }
 
-    # Solo si querés el modo ?i= con vista previa personalizada:
+    # Vista previa personalizada en WhatsApp para ?i= y ?s= (opcional: sin
+    # esto los links cortos funcionan igual, con la vista previa genérica).
     location = / {
         access_log off;   # no guardar los datos de la fiesta en los logs
-        if ($arg_i) {
+        if ($args ~ "(^|&)[is]=") {
             proxy_pass http://127.0.0.1:8787;
         }
         try_files /index.html =404;
@@ -309,6 +316,38 @@ Agregá esto dentro del `server { … }` de nginx:
 3. El generador te muestra la URL para ver la lista: `https://invitacion.blucaro.site/api/rsvp?event=<id>&token=TU_RSVP_TOKEN`.
 
 Para respaldar los datos, copiá el archivo `rsvp.sqlite3`. Para empezar de cero, borralo.
+
+### Links cortos
+
+Con el backend andando y `location /api/` en nginx, el generador lo detecta solo (pide `GET /api/s`) y muestra el botón **✂️ Acortar link** debajo del link. Al tocarlo:
+
+1. El navegador manda a `POST /api/s` lo mismo que iría en el link: `{"i": "<datos>", "f": "<foto>"}`. El server valida que sea una invitación bien formada, que la foto sea WebP/JPEG en base64url y el tamaño, y aplica un límite de 30 links cada 10 minutos por IP.
+2. Lo guarda en SQLite (tabla `short`, en el mismo archivo que las confirmaciones) y devuelve un código de 6 caracteres sin letras confusas (`0/o`, `1/i/l`). Si ya existía uno con los mismos datos, devuelve ese mismo código.
+3. El link, el botón de WhatsApp, «Abrir invitación» y el QR pasan a usar `https://invitacion.blucaro.site/?s=k3f9a2`. Como entra de sobra en un QR, **el QR también lleva la foto**.
+
+Si después cambiás algo del formulario, el link vuelve a ser el largo y hay que acortarlo de nuevo (los links cortos que ya mandaste siguen mostrando la versión vieja). El link para editar sigue siendo el largo: no se guarda en el servidor.
+
+Del lado del invitado, la página ve `?s=`, pide los datos a `GET /api/s/<código>` y sigue igual que con un link largo. Si el código no existe o venció, muestra el aviso de link roto.
+
+**Privacidad:** a diferencia de los links largos, acá los datos de la fiesta (nombre, dirección, teléfono, foto) **quedan guardados en tu servidor**. Para que no se acumulen, cada link corto **se borra solo 60 días después de la fecha de la fiesta** (se ajusta con `SHORT_DAYS`). Para que nadie pueda recorrer códigos al azar, cada IP puede pedir como mucho 30 códigos inexistentes cada 10 minutos.
+
+#### Correr el backend en un server de casa (por VPN)
+
+El backend no tiene que estar en el VPS: puede correr en una compu de tu casa conectada al VPS por una VPN (WireGuard, Tailscale, etc.). nginx sigue en el VPS y solo cambia a dónde reenvía:
+
+1. En el server de casa, cloná el repo y usá el mismo servicio de systemd, pero escuchando en la IP de la VPN, y con `SITE_ROOT` apuntando a la carpeta del repo (la necesita para la vista previa personalizada):
+
+   ```ini
+   # HOST = la IP de la VPN del server de casa
+   Environment=HOST=10.8.0.2
+   Environment=PORT=8787
+   Environment=SITE_ROOT=/ruta/al/repo/cumpleinvitacion
+   ```
+
+2. En nginx (en el VPS), cambiá `http://127.0.0.1:8787` por `http://10.8.0.2:8787` en los dos `proxy_pass`. El `X-Real-IP` sigue llegando bien, así que los límites por IP funcionan igual.
+3. Asegurate de que el puerto 8787 solo sea accesible desde la VPN (por ejemplo, con el firewall del server de casa), no desde internet.
+
+Si el server de casa se apaga, los links largos siguen funcionando; los cortos no abren hasta que vuelva.
 
 ---
 
