@@ -1094,6 +1094,11 @@
 
       $("#message-count").textContent = f.message.value.length;
 
+      // Aviso (no bloquea): fecha en el pasado, casi siempre es un error de tipeo
+      var now = new Date();
+      var today = now.getFullYear() + "-" + pad2(now.getMonth() + 1) + "-" + pad2(now.getDate());
+      $("#date-past").hidden = !(isValidDate(d.date) && d.date < today);
+
       // Vista previa
       var pd = previewData(d);
       applyTheme(preview, pd);
@@ -1233,7 +1238,10 @@
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ i: encodeData(currentData), f: photo ? photo.param : "" })
       })
-        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
+        .then(function (r) {
+          if (r.ok) return r.json();
+          return r.json().catch(function () { return {}; }).then(function (j) { throw new Error(j.error || "HTTP " + r.status); });
+        })
         .then(function (j) {
           if (!j || !/^[2-9a-z]{4,12}$/.test(j.code)) throw new Error("respuesta inválida");
           if (forPayload !== currentPayload) { status.textContent = ""; return; } // se editó mientras tanto
@@ -1242,8 +1250,10 @@
           update();
           status.textContent = "¡Listo! Link corto creado ✂️ Si cambiás algo, vas a tener que acortarlo de nuevo.";
         })
-        .catch(function () {
-          status.textContent = "No se pudo acortar el link. Podés mandar el largo: funciona igual.";
+        .catch(function (err) {
+          status.textContent = err && err.message === "party is over"
+            ? "No se puede acortar: la fecha de la fiesta ya pasó. Revisá la fecha."
+            : "No se pudo acortar el link. Podés mandar el largo: funciona igual.";
         })
         .then(function () { btn.disabled = false; });
     });

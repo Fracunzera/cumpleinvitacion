@@ -15,6 +15,7 @@
   --g-primary-strong: #b02457;
   --g-on-primary: #ffffff;
   --g-ok: #1e7a4c;
+  --g-warn: #a14a06;
   --g-warn-bg: #fff4d6;
   --g-warn-border: #e8b931;
   --g-error: #c0262d;
@@ -38,6 +39,7 @@
     --g-primary-strong: #ff8bb0;
     --g-on-primary: #1a0610;
     --g-ok: #59d39a;
+    --g-warn: #fbbf6a;
     --g-warn-bg: #3a2f10;
     --g-warn-border: #a8841c;
     --g-error: #ff8585;
@@ -373,6 +375,7 @@ input::placeholder, textarea::placeholder { color: var(--g-muted); opacity: .75;
 
 .hint { font-size: .84rem; color: var(--g-muted); margin-top: .3rem; }
 .hint-ok { color: var(--g-ok); font-weight: 600; }
+.hint-warn { color: var(--g-warn); font-weight: 600; }
 .error { font-size: .86rem; color: var(--g-error); font-weight: 600; margin-top: .3rem; }
 .error::before { content: "⚠ "; }
 
