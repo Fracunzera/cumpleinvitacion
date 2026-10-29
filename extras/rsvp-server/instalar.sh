@@ -9,7 +9,9 @@
 #   en el VPS:             sudo BACKEND=10.8.0.2:8787 bash extras/rsvp-server/instalar.sh --solo-nginx
 #
 # Se puede correr de nuevo sin problema (por ejemplo, después de un git pull):
-# conserva el token y la base de datos.
+# conserva el token y la base de datos. La config del sitio en nginx
+# (/etc/nginx/sites-available/invitacion) se reescribe entera, con backup en
+# /root; si nginx -t falla, se deja la anterior.
 set -euo pipefail
 
 MODE="${1:-todo}"
@@ -25,6 +27,7 @@ BACKEND="${BACKEND:-127.0.0.1:$PORT}"
 ENV_FILE=/etc/invitacion-rsvp.env
 UNIT=/etc/systemd/system/invitacion-rsvp.service
 SNIPPET=/etc/nginx/snippets/invitacion-backend.conf
+SITE_CONF="${SITE_CONF:-/etc/nginx/sites-available/invitacion}"
 
 instalar_servicio() {
   command -v python3 >/dev/null || { echo "Falta python3 (sudo apt install python3)." >&2; exit 1; }
@@ -105,6 +108,8 @@ EOF
 instalar_nginx() {
   command -v nginx >/dev/null || { echo "No encontré nginx en esta máquina." >&2; exit 1; }
   mkdir -p "$(dirname "$SNIPPET")"
+  rm -f "$SNIPPET.anterior"
+  [ -f "$SNIPPET" ] && cp "$SNIPPET" "$SNIPPET.anterior"
   cat > "$SNIPPET" <<EOF
 # Generado por extras/rsvp-server/instalar.sh: backend opcional de la invitación.
 # Va dentro del server { } del sitio, con: include snippets/invitacion-backend.conf;
@@ -127,21 +132,92 @@ location = / {
 EOF
   echo "✓ Config de nginx en $SNIPPET (backend: $BACKEND)"
 
-  if grep -Rqs "invitacion-backend.conf" /etc/nginx/sites-enabled /etc/nginx/conf.d; then
-    nginx -t && systemctl reload nginx
-    echo "✓ nginx recargado"
-  else
+  escribir_sitio
+}
+
+# Reescribe la config del sitio entera (con backup) para que incluya el
+# snippet. Si nginx -t falla, vuelve a dejar la anterior.
+escribir_sitio() {
+  if [ ! -f "$SITE_CONF" ]; then
     cat <<EOF
 
-Falta un paso a mano (una sola vez). Abrí la config de tu sitio:
-  sudo nano /etc/nginx/sites-available/invitacion
-y dentro del bloque server { } que tiene "listen 443" (el que agregó certbot),
-antes de la llave } final, agregá esta línea:
+No encontré $SITE_CONF. Agregá a mano esta línea dentro del server { } de tu
+sitio (el que tiene "listen 443") y recargá nginx:
   include snippets/invitacion-backend.conf;
-Si ya tenías bloques "location /api/rsvp" o "location = /", borralos.
-Después:
-  sudo nginx -t && sudo systemctl reload nginx
+(o corré el script con SITE_CONF=/ruta/a/tu/config)
 EOF
+    return
+  fi
+  local domain
+  domain="${DOMAIN:-$(sed -n 's/^[[:space:]]*server_name[[:space:]]\+\([^[:space:];]*\).*/\1/p' "$SITE_CONF" | head -1)}"
+  [ -n "$domain" ] || { echo "No pude sacar el dominio de $SITE_CONF. Corré el script con DOMAIN=tu.dominio" >&2; exit 1; }
+
+  local backup
+  backup="/root/invitacion-nginx.$(date +%Y%m%d-%H%M%S).bak"
+  cp "$SITE_CONF" "$backup"
+
+  local le="/etc/letsencrypt/live/$domain"
+  {
+    echo "# Generado por extras/rsvp-server/instalar.sh. Backup de la versión anterior: $backup"
+    echo "server {"
+    echo "    server_name $domain;"
+    echo "    root $REPO;"
+    echo "    index index.html;"
+    cat <<'EOF'
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /assets/ {
+        # no-cache = el navegador revalida siempre (304 si no cambió), así un deploy se ve al instante
+        add_header Cache-Control "no-cache";
+    }
+    location ~ /\.(git|nojekyll) { deny all; }
+    location /extras/ { deny all; }
+
+    # Backend opcional: confirmaciones, links cortos y vista previa personalizada
+    include snippets/invitacion-backend.conf;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    add_header Permissions-Policy "microphone=(self), camera=(), geolocation=()" always;
+
+    gzip on;
+    gzip_types text/css application/javascript image/svg+xml;
+
+EOF
+    if [ -f "$le/fullchain.pem" ] && [ -f "$le/privkey.pem" ]; then
+      echo "    listen 443 ssl; # managed by Certbot"
+      echo "    ssl_certificate $le/fullchain.pem; # managed by Certbot"
+      echo "    ssl_certificate_key $le/privkey.pem; # managed by Certbot"
+      [ -f /etc/letsencrypt/options-ssl-nginx.conf ] && echo "    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot"
+      [ -f /etc/letsencrypt/ssl-dhparams.pem ] && echo "    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot"
+      echo "}"
+      echo "server {"
+      echo "    listen 80;"
+      echo "    server_name $domain;"
+      # shellcheck disable=SC2016  # $host es de nginx
+      echo '    return 301 https://$host$request_uri;'
+      echo "}"
+    else
+      echo "    listen 80;"
+      echo "}"
+    fi
+  } > "$SITE_CONF.nuevo"
+  mv "$SITE_CONF.nuevo" "$SITE_CONF"
+  [ -e "/etc/nginx/sites-enabled/$(basename "$SITE_CONF")" ] || ln -s "$SITE_CONF" /etc/nginx/sites-enabled/
+
+  if nginx -t 2>/tmp/invitacion-nginx-test.log; then
+    systemctl reload nginx
+    rm -f "$SNIPPET.anterior"
+    echo "✓ Config de $domain reescrita y nginx recargado (backup: $backup)"
+  else
+    cp "$backup" "$SITE_CONF"
+    if [ -f "$SNIPPET.anterior" ]; then mv "$SNIPPET.anterior" "$SNIPPET"; else rm -f "$SNIPPET"; fi
+    echo "✗ nginx -t falló con la config nueva; dejé la anterior como estaba." >&2
+    cat /tmp/invitacion-nginx-test.log >&2
+    exit 1
   fi
 }
 

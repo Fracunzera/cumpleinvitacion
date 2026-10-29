@@ -256,15 +256,7 @@ En el VPS, desde la carpeta del repo:
 cd /var/www/invitacion && sudo git pull && sudo bash extras/rsvp-server/instalar.sh
 ```
 
-El script crea el usuario `invitacion` y la carpeta de la base. También genera el token y lo guarda en `/etc/invitacion-rsvp.env`, instala y arranca el servicio `invitacion-rsvp` y escribe la config de nginx en `/etc/nginx/snippets/invitacion-backend.conf`. Lo único que queda a mano, una sola vez, es agregar esta línea dentro del `server { … }` de tu sitio (el que tiene `listen 443`) y borrar los bloques `location /api/rsvp` o `location = /` que tuvieras de antes:
-
-```nginx
-    include snippets/invitacion-backend.conf;
-```
-
-```bash
-sudo nginx -t && sudo systemctl reload nginx
-```
+El script crea el usuario `invitacion` y la carpeta de la base. También genera el token y lo guarda en `/etc/invitacion-rsvp.env`, instala y arranca el servicio `invitacion-rsvp`, escribe `/etc/nginx/snippets/invitacion-backend.conf` y **reescribe entera la config del sitio** (`/etc/nginx/sites-available/invitacion`) para incluirlo. La config se arma con el dominio que ya tenías y con los certificados de certbot si existen, y la versión anterior queda de backup en `/root/invitacion-nginx.<fecha>.bak`. Si `nginx -t` falla, deja todo como estaba y muestra el error. Si tu config está en otro archivo, pasáselo con `SITE_CONF=/ruta/al/archivo`.
 
 Para comprobarlo, `curl https://invitacion.blucaro.site/api/s` tiene que responder `{"ok":true}`. Podés volver a correr el script cuando quieras, por ejemplo después de un `git pull`: conserva el token y la base.
 
