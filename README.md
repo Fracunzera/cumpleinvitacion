@@ -55,27 +55,27 @@ Una sola página (`index.html`) decide qué mostrar según el hash de la URL:
 | URL | Qué muestra |
 |---|---|
 | `https://sitio/` | El generador |
-| `https://sitio/#i=eyJ2Ijox…` | La invitación |
-| `https://sitio/#e=eyJ2Ijox…` | El generador con esos datos cargados, para editar |
-| `https://sitio/#i=eyJ2Ijox…&f=wUklG…` | La invitación con foto |
+| `https://sitio/#i=Mh9NYXJ0…` | La invitación |
+| `https://sitio/#e=Mh9NYXJ0…` | El generador con esos datos cargados, para editar |
+| `https://sitio/#i=Mh9NYXJ0…&f=wUklG…` | La invitación con foto |
 
-Los datos se serializan así: **objeto → JSON con claves cortas → UTF-8 → base64url**. Por ejemplo:
+Los datos se serializan así: **campos en un orden fijo, separados por el carácter `\x1f` → UTF-8 → base64url**. No hay claves ni comillas, la fecha va como `AAAAMMDD`, las horas como `HHMM` y los campos vacíos del final se omiten. Por ejemplo:
 
-```json
-{"v":1,"n":"Martina","a":7,"d":"2026-11-07","t":"17:00","e":"20:00",
- "p":"Pelotero Arcoíris, Av. Corrientes 1234","x":"¡Vení a festejar!",
- "w":"5491123456789","s":"k","o":180}
+```
+2␟Martina␟20261107␟1700␟180␟7␟2000␟5491123456789␟Pelotero Arcoíris, Av. Corrientes 1234␟¡Vení a festejar!
 ```
 
-| Clave | Dato | Clave | Dato |
+| # | Dato | # | Dato |
 |---|---|---|---|
-| `v` | versión del formato | `p` | lugar |
-| `n` | nombre | `m` | link de mapa (solo `http/https`) |
-| `a` | edad | `x` | mensaje |
-| `d` | fecha `AAAA-MM-DD` | `w` | WhatsApp (solo dígitos) |
-| `t` | hora `HH:MM` | `s` | tema: `k` infantil, `e` elegante, `m` minimalista |
-| `e` | hora de fin (opcional) | `c` | color propio `#rrggbb` |
-| `o` | offset horario de quien creó la invitación (minutos) | `r` | endpoint de RSVP propio (opcional) |
+| 0 | versión del formato (`2`) | 7 | WhatsApp (solo dígitos) |
+| 1 | nombre | 8 | lugar |
+| 2 | fecha `AAAAMMDD` | 9 | mensaje |
+| 3 | hora `HHMM` | 10 | link de mapa (solo `http/https`) |
+| 4 | offset horario de quien creó la invitación (minutos) | 11 | tema: vacío infantil, `e` elegante, `m` minimalista |
+| 5 | edad | 12 | color propio `rrggbb` |
+| 6 | hora de fin `HHMM` (opcional) | 13 | endpoint de RSVP propio (opcional) |
+
+Así el link queda alrededor de un 30 % más corto que con JSON. Los links viejos (versión 1, un JSON con claves cortas como `{"v":1,"n":"Martina",…}`) se siguen abriendo igual.
 
 ### La foto
 
@@ -83,7 +83,7 @@ La foto también viaja dentro del link, en un parámetro aparte (`&f=`), así qu
 
 - El navegador de quien crea la invitación la recorta en cuadrado (en las fotos verticales, un poco más arriba del centro, para no cortar caras), la achica (hasta 176 px) y la comprime en WebP o JPEG hasta que pese **menos de 3,6 KB**. Nunca se sube a ningún lado.
 - `f` = `w` + base64url(WebP) o `j` + base64url(JPEG). Al abrir la invitación se verifican los bytes del formato y se muestra con `<img src="data:…">`. Si la foto está rota, la invitación se abre igual, sin foto.
-- Con foto, el link pasa de ~350 a ~5.000 caracteres. WhatsApp y los navegadores lo manejan sin problema, pero **un QR no tiene capacidad para una foto**: el QR abre la misma invitación sin la foto (el generador lo avisa).
+- Con foto, el link pasa de ~250 a ~5.000 caracteres. WhatsApp y los navegadores lo manejan sin problema, pero **un QR no tiene capacidad para una foto**: el QR abre la misma invitación sin la foto (el generador lo avisa).
 
 ### Sugerencias de mensaje con IA
 
@@ -94,7 +94,7 @@ El botón **«✨ Sugerir mensaje»** (con tono automático, divertido, emotivo 
 
 Cada clic da otra idea, y **Deshacer** vuelve a lo que habías escrito. El código está en `assets/suggest.js`; para sumar frases, agregalas a las listas de `T` y `MILESTONES`.
 
-Gracias a `o`, la cuenta regresiva y el `.ics` son correctos aunque el invitado esté en otro huso horario: la hora se muestra tal como la escribiste y, si el invitado está en otra zona, se le aclara su hora local.
+Gracias al offset horario (campo 4), la cuenta regresiva y el `.ics` son correctos aunque el invitado esté en otro huso horario: la hora se muestra tal como la escribiste y, si el invitado está en otra zona, se le aclara su hora local.
 
 Al cargar, todo lo que viene en el link se valida: los textos se insertan con `textContent` (nunca como HTML), los links de mapa solo pueden ser `http/https` y una CSP bloquea cualquier script o conexión externa. Si el hash está roto o incompleto, aparece un aviso amable y el generador.
 
@@ -201,7 +201,7 @@ Hay dos cosas a tener en cuenta:
 
 ### Alternativa: vista previa personalizada con `?i=` (trade-off de privacidad)
 
-La página también acepta los datos en la query string: `https://sitio/?i=eyJ2Ijox…` (es el mismo valor que va después de `#i=`). Con eso, un servidor **puede** leer los datos y poner el nombre en la tarjeta, por ejemplo «🎂 ¡Estás invitado/a al cumple de Martina!».
+La página también acepta los datos en la query string: `https://sitio/?i=Mh9NYXJ0…` (es el mismo valor que va después de `#i=`). Con eso, un servidor **puede** leer los datos y poner el nombre en la tarjeta, por ejemplo «🎂 ¡Estás invitado/a al cumple de Martina!».
 
 - ✅ La vista previa en WhatsApp muestra el nombre y la fecha.
 - ❌ Los datos de la fiesta (nombre, dirección, teléfono) **llegan al servidor y quedan en los logs** de nginx, del proxy, etc. Se pierde la privacidad por diseño.

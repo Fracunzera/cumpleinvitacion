@@ -117,8 +117,20 @@ def verify_pow(pow_):
 def decode_invite(raw):
     s = raw.strip().replace("-", "+").replace("_", "/")
     s += "=" * (-len(s) % 4)
-    data = json.loads(base64.b64decode(s).decode("utf-8"))
-    return data if isinstance(data, dict) else {}
+    text = base64.b64decode(s).decode("utf-8")
+    if text.startswith("{"):  # links v1: JSON con claves cortas
+        data = json.loads(text)
+        return data if isinstance(data, dict) else {}
+    # links v2: "2", nombre, fecha AAAAMMDD, hora HHMM, ... separados por \x1f
+    vals = text.split("\x1f")
+    if vals[0] != "2":
+        return {}
+    data = dict(zip(("n", "d", "t"), vals[1:4]))
+    if re.fullmatch(r"\d{8}", data.get("d", "")):
+        data["d"] = "%s-%s-%s" % (data["d"][:4], data["d"][4:6], data["d"][6:])
+    if re.fullmatch(r"\d{4}", data.get("t", "")):
+        data["t"] = "%s:%s" % (data["t"][:2], data["t"][2:])
+    return data
 
 
 class Handler(BaseHTTPRequestHandler):

@@ -6,7 +6,8 @@
  *   - con #i=<base64url>    → invitación
  *   - con #e=<base64url>    → generador con los datos cargados (para editar)
  *
- * Los datos viajan como JSON (claves cortas) → UTF-8 → base64url.
+ * Los datos viajan como campos separados por \x1f → UTF-8 → base64url
+ * (los links viejos, con JSON de claves cortas, se siguen abriendo).
  * Nada sale del navegador: no hay requests a terceros, cookies ni analytics.
  */
 (function () {
@@ -40,7 +41,7 @@
   function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
   // ------------------------------------------------------------------
-  // Codificación del hash: JSON → UTF-8 → base64url
+  // Codificación del hash: texto → UTF-8 → base64url
   // ------------------------------------------------------------------
   function utf8Encode(str) {
     if (window.TextEncoder) return new TextEncoder().encode(str);
@@ -289,8 +290,44 @@
     return d;
   }
 
-  function encodeData(d) { return base64urlEncode(JSON.stringify(pack(d))); }
-  function decodeData(s) { return unpack(JSON.parse(base64urlDecode(s))); }
+  // Formato del link (v2): campos en un orden fijo, separados por \x1f, sin
+  // claves ni comillas; fecha AAAAMMDD, horas HHMM y color sin "#". Queda un
+  // ~30 % más corto que el JSON de la v1, que se sigue leyendo igual.
+  var SEP = "\x1f";
+  var FIELDS = ["n", "d", "t", "o", "a", "e", "w", "p", "x", "m", "s", "c", "r"];
+
+  function serialize(o) {
+    var vals = FIELDS.map(function (k) {
+      var v = o[k];
+      if (v === undefined || v === null) return "";
+      v = String(v);
+      if (k === "d" || k === "t" || k === "e") v = v.replace(/[-:]/g, "");
+      if (k === "c") v = v.replace("#", "");
+      return v.split(SEP).join(" ");
+    });
+    while (vals.length && vals[vals.length - 1] === "") vals.pop();
+    return "2" + SEP + vals.join(SEP);
+  }
+
+  function deserialize(str) {
+    if (str.charAt(0) === "{") return JSON.parse(str); // links v1
+    var vals = str.split(SEP);
+    if (vals.shift() !== "2") throw new Error("versión desconocida");
+    var o = { v: 2 };
+    FIELDS.forEach(function (k, i) {
+      var v = vals[i];
+      if (!v) return;
+      if (k === "d") v = v.replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3");
+      else if (k === "t" || k === "e") v = v.replace(/^(\d{2})(\d{2})$/, "$1:$2");
+      else if (k === "c") v = "#" + v;
+      else if (k === "o") v = /^-?\d+$/.test(v) ? Number(v) : null;
+      o[k] = v;
+    });
+    return o;
+  }
+
+  function encodeData(d) { return base64urlEncode(serialize(pack(d))); }
+  function decodeData(s) { return unpack(deserialize(base64urlDecode(s))); }
 
   // ------------------------------------------------------------------
   // Fechas y horas
