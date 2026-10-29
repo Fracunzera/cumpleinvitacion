@@ -446,6 +446,8 @@ input[type="color"]:disabled { opacity: .4; cursor: not-allowed; }
 .gen-result:focus { outline: none; }
 .link-box { display: flex; gap: .5rem; margin-top: .7rem; }
 .link-box input { flex: 1; min-width: 0; font-size: .9rem; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.short-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .75rem; margin: .1rem 0 .6rem; }
+.short-row .hint { margin-top: 0; flex: 1 1 14rem; }
 .status-msg { min-height: 1.4em; font-size: .9rem; color: var(--g-ok); font-weight: 600; margin-top: .35rem; }
 .share-row { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .4rem; }
 .share-row .btn-wa { flex: 1 1 100%; }

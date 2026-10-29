@@ -999,6 +999,8 @@
     var submitted = false;
     var currentLink = "", qrLink = "", currentData = null;
     var photo = null; // { param, dataUrl } de la foto comprimida
+    // Links cortos (solo si el backend opcional atiende /api/s en este dominio)
+    var shortApi = "", shortLink = "", shortFor = "", currentPayload = "";
 
     if (navigator.share) $("#btn-share").hidden = false;
 
@@ -1106,13 +1108,17 @@
       var payload = encodeData(d);
       var photoPart = photo ? "&f=" + photo.param : "";
       currentData = d;
-      qrLink = baseUrl() + "#i=" + payload;  // la foto no entra en un QR
-      currentLink = qrLink + photoPart;
+      currentPayload = payload + photoPart;
+      if (shortFor !== currentPayload) shortLink = ""; // cambió algo: hay que volver a acortar
+      // El link largo con foto no entra en un QR; el corto sí la incluye.
+      qrLink = shortLink || baseUrl() + "#i=" + payload;
+      currentLink = shortLink || qrLink + photoPart;
+      $("#short-row").hidden = !shortApi || !!shortLink;
       $("#out-link").value = currentLink;
       $("#out-edit").value = baseUrl() + "#e=" + payload + photoPart;
       $("#btn-open").href = currentLink;
       $("#btn-wa").href = "https://wa.me/?text=" + encodeURIComponent(shareText(d, currentLink));
-      $("#qr-photo-note").hidden = !photo;
+      $("#qr-photo-note").hidden = !photo || !!shortLink;
       renderQr(qrLink);
 
       var admin = $("#rsvp-admin");
@@ -1207,6 +1213,40 @@
       if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, fallback);
       else fallback();
     }
+
+    // ---- Link corto ----
+    var sameSite = false;
+    try { sameSite = location.protocol !== "file:" && new URL(baseUrl()).origin === location.origin; } catch (e) { /* URL rara */ }
+    if (sameSite) {
+      fetch("/api/s", { headers: { Accept: "application/json" } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) { if (j && j.ok) { shortApi = "/api/s"; update(); } })
+        .catch(function () { /* sin backend: solo links largos */ });
+    }
+    $("#btn-short").addEventListener("click", function () {
+      var btn = this, status = $("#copy-status"), forPayload = currentPayload;
+      if (!shortApi || !currentData) return;
+      btn.disabled = true;
+      status.textContent = "Acortando…";
+      fetch(shortApi, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ i: encodeData(currentData), f: photo ? photo.param : "" })
+      })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
+        .then(function (j) {
+          if (!j || !/^[2-9a-z]{4,12}$/.test(j.code)) throw new Error("respuesta inválida");
+          if (forPayload !== currentPayload) { status.textContent = ""; return; } // se editó mientras tanto
+          shortLink = baseUrl() + "?s=" + j.code;
+          shortFor = forPayload;
+          update();
+          status.textContent = "¡Listo! Link corto creado ✂️ Si cambiás algo, vas a tener que acortarlo de nuevo.";
+        })
+        .catch(function () {
+          status.textContent = "No se pudo acortar el link. Podés mandar el largo: funciona igual.";
+        })
+        .then(function () { btn.disabled = false; });
+    });
 
     $("#btn-copy").addEventListener("click", function () {
       if (currentLink) copy(currentLink, $("#copy-status"), "¡Link copiado! Pegalo donde quieras 📋");
@@ -1329,12 +1369,31 @@
   function readParams() {
     var hash = new URLSearchParams(location.hash.replace(/^#/, ""));
     var query = new URLSearchParams(location.search);
-    return { invite: hash.get("i") || query.get("i"), edit: hash.get("e"), photo: hash.get("f") || query.get("f") };
+    return { invite: hash.get("i") || query.get("i"), edit: hash.get("e"), photo: hash.get("f") || query.get("f"),
+      short: query.get("s") };
+  }
+
+  // Link corto (?s=<código>): los datos los guarda el backend opcional.
+  function routeShort(code) {
+    code = code.trim().toLowerCase();
+    var endpoint = /^[2-9a-z]{4,12}$/.test(code) ? sameOriginEndpoint("/api/s/" + code) : "";
+    var done = function () { $("#loading").hidden = true; };
+    if (!endpoint) { done(); showGenerator({ error: true }); return; }
+    fetch(endpoint, { headers: { Accept: "application/json" } })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
+      .then(function (j) {
+        var data = decodeData(String(j.i));
+        data.photo = decodePhoto(j.f ? String(j.f) : "");
+        done();
+        showInvite(data);
+      })
+      .catch(function () { done(); showGenerator({ error: true }); });
   }
 
   function route() {
-    $("#loading").hidden = true;
     var p = readParams();
+    if (p.invite === null && p.edit === null && p.short) { routeShort(p.short); return; }
+    $("#loading").hidden = true;
     if (p.invite !== null) {
       var data;
       try { data = decodeData(p.invite); } catch (e) { data = null; }

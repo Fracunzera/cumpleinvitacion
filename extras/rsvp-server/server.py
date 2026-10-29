@@ -2,7 +2,7 @@
 """
 Backend OPCIONAL para la invitación de cumpleaños. Licencia MIT.
 
-El sitio funciona 100% sin esto. Sirve para dos cosas extra en tu VPS:
+El sitio funciona 100% sin esto. Sirve para tres cosas extra en tu VPS (o en un server de casa por VPN):
 
   1. Lista de confirmados: POST /api/rsvp guarda cada confirmación en SQLite y
      GET /api/rsvp?event=<id>&token=<RSVP_TOKEN> muestra la lista.
@@ -14,6 +14,11 @@ El sitio funciona 100% sin esto. Sirve para dos cosas extra en tu VPS:
   2. Vista previa personalizada (modo ?i=): GET /?i=<datos> devuelve index.html
      con og:title / og:description armados con el nombre y la fecha.
      OJO: con ?i= los datos SÍ llegan al servidor y quedan en los logs.
+  3. Links cortos: POST /api/s guarda los datos de la invitación (y la foto) y
+     devuelve un código; el link queda como https://sitio/?s=<código>.
+     GET /api/s/<código> devuelve los datos y GET /?s=<código> sirve index.html
+     con la vista previa personalizada. Cada link corto se borra solo
+     SHORT_DAYS días después de la fiesta.
 
 Solo usa la biblioteca estándar de Python 3.8+. Sin dependencias.
 
@@ -24,6 +29,8 @@ Variables de entorno:
   HOST / PORT  dónde escuchar                (default: 127.0.0.1:8787)
   RSVP_POW_BITS  dificultad del desafío      (default: 17, ~1 s en un celular)
   RSVP_SECRET    clave para firmar desafíos  (default: aleatoria al iniciar)
+  SHORT_DAYS     días después de la fiesta en que se borra un link corto
+                 (default: 60)
 """
 import base64
 import hashlib
@@ -51,6 +58,11 @@ CHALLENGE_TTL = 600  # segundos
 USED = {}  # desafíos ya usados: salt -> vencimiento
 
 MAX_BODY = 4096
+SHORT_MAX_BODY = 16384
+SHORT_DAYS = max(1, int(os.environ.get("SHORT_DAYS", "60")))
+SHORT_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz"  # sin 0/o, 1/i/l
+SHORT_LEN = 6
+SHORT_CODE_RE = re.compile(r"[2-9a-z]{4,12}")
 RATE = {}  # ip -> [timestamps]
 RATE_LIMIT = 10  # confirmaciones por IP cada 10 minutos
 
@@ -69,17 +81,28 @@ def db():
         )"""
     )
     con.execute("CREATE INDEX IF NOT EXISTS rsvp_event ON rsvp(event)")
+    con.execute(
+        """CREATE TABLE IF NOT EXISTS short (
+            code TEXT PRIMARY KEY,
+            digest TEXT NOT NULL UNIQUE,
+            invite TEXT NOT NULL,
+            photo TEXT NOT NULL DEFAULT '',
+            expires TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )"""
+    )
     return con
 
 
-def rate_limited(ip, kind="rsvp", limit=RATE_LIMIT):
+def rate_limited(ip, kind="rsvp", limit=RATE_LIMIT, record=True):
     now = time.time()
     key = (kind, ip)
     hits = [t for t in RATE.get(key, []) if now - t < 600]
     RATE[key] = hits
     if len(hits) >= limit:
         return True
-    hits.append(now)
+    if record:
+        hits.append(now)
     return False
 
 
@@ -133,6 +156,34 @@ def decode_invite(raw):
     return data
 
 
+def valid_invite(raw):
+    """Devuelve los datos si `raw` es una invitación válida (v1 o v2), o None."""
+    if not isinstance(raw, str) or not 0 < len(raw) <= 3000 or not re.fullmatch(r"[A-Za-z0-9_-]+", raw):
+        return None
+    try:
+        d = decode_invite(raw)
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if not str(d.get("n", "")).strip() or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(d.get("d", ""))):
+        return None
+    return d
+
+
+def valid_photo(raw):
+    return raw == "" or (
+        isinstance(raw, str) and len(raw) <= 12000 and re.fullmatch(r"[wj][A-Za-z0-9_-]+", raw) is not None
+    )
+
+
+def find_short(code):
+    if not SHORT_CODE_RE.fullmatch(code or ""):
+        return None
+    with db() as con:
+        return con.execute(
+            "SELECT invite, photo FROM short WHERE code=? AND expires >= date('now')", (code,)
+        ).fetchone()
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "invitacion-rsvp"
 
@@ -153,10 +204,51 @@ class Handler(BaseHTTPRequestHandler):
         # No logueamos la query string (puede tener datos de la fiesta).
         print("%s %s %s" % (self.client_ip(), self.command, urlparse(self.path).path))
 
-    # ---- POST /api/rsvp ----
     def do_POST(self):
-        if urlparse(self.path).path != "/api/rsvp":
-            return self.send(404, '{"error":"not found"}')
+        path = urlparse(self.path).path
+        if path == "/api/rsvp":
+            return self.post_rsvp()
+        if path == "/api/s":
+            return self.post_short()
+        return self.send(404, '{"error":"not found"}')
+
+    # ---- POST /api/s ----
+    def post_short(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0 or length > SHORT_MAX_BODY:
+            return self.send(413, '{"error":"too large"}')
+        if rate_limited(self.client_ip(), "short", 30):
+            return self.send(429, '{"error":"too many requests"}')
+        try:
+            data = json.loads(self.rfile.read(length).decode("utf-8"))
+            invite, photo = data.get("i"), data.get("f") or ""
+        except (ValueError, TypeError, AttributeError):
+            return self.send(400, '{"error":"bad request"}')
+        d = valid_invite(invite)
+        if d is None or not valid_photo(photo):
+            return self.send(400, '{"error":"bad request"}')
+        digest = hashlib.sha256(("%s\n%s" % (invite, photo)).encode("ascii")).hexdigest()
+        with db() as con:
+            con.execute("DELETE FROM short WHERE expires < date('now')")
+            if con.execute("SELECT date(?, ?) < date('now')", (d["d"], "+%d days" % SHORT_DAYS)).fetchone()[0]:
+                return self.send(400, '{"error":"party is over"}')  # nacería vencido
+            row = con.execute("SELECT code FROM short WHERE digest=?", (digest,)).fetchone()
+            if row:
+                return self.send(200, json.dumps({"code": row[0]}))
+            for _ in range(10):
+                code = "".join(secrets.choice(SHORT_ALPHABET) for _ in range(SHORT_LEN))
+                try:
+                    con.execute(
+                        "INSERT INTO short(code, digest, invite, photo, expires) VALUES (?,?,?,?,date(?, ?))",
+                        (code, digest, invite, photo, d["d"], "+%d days" % SHORT_DAYS),
+                    )
+                    return self.send(201, json.dumps({"code": code}))
+                except sqlite3.IntegrityError:
+                    continue
+        return self.send(500, '{"error":"try again"}')
+
+    # ---- POST /api/rsvp ----
+    def post_rsvp(self):
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0 or length > MAX_BODY:
             return self.send(413, '{"error":"too large"}')
@@ -196,6 +288,18 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, json.dumps(new_challenge()))
         if url.path == "/api/rsvp":
             return self.list_rsvps(q)
+        if url.path == "/api/s":
+            return self.send(200, '{"ok":true}')  # para que el generador sepa que hay links cortos
+        if url.path.startswith("/api/s/"):
+            # Solo cuentan los códigos que no existen: frena a quien prueba
+            # códigos al azar sin molestar a invitados que comparten IP.
+            if rate_limited(self.client_ip(), "lookup-miss", 30, record=False):
+                return self.send(429, '{"error":"too many requests"}')
+            row = find_short(url.path[len("/api/s/"):])
+            if not row:
+                rate_limited(self.client_ip(), "lookup-miss", 30)
+                return self.send(404, '{"error":"not found"}')
+            return self.send(200, json.dumps({"i": row[0], "f": row[1]}))
         if url.path in ("/", "/index.html"):
             return self.index_with_preview(q)
         return self.send(404, '{"error":"not found"}')
@@ -255,6 +359,10 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:
             return self.send(500, '{"error":"index.html not found"}')
         raw = (q.get("i") or [""])[0]
+        short = (q.get("s") or [""])[0]
+        if short and not raw:
+            row = find_short(short)
+            raw = row[0] if row else ""
         if raw:
             try:
                 d = decode_invite(raw)
