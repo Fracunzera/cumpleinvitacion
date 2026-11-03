@@ -6,7 +6,8 @@
  *   - con #i=<base64url>    → invitación
  *   - con #e=<base64url>    → generador con los datos cargados (para editar)
  *
- * Los datos viajan como JSON (claves cortas) → UTF-8 → base64url.
+ * Los datos viajan como campos separados por \x1f → UTF-8 → base64url
+ * (los links viejos, con JSON de claves cortas, se siguen abriendo).
  * Nada sale del navegador: no hay requests a terceros, cookies ni analytics.
  */
 (function () {
@@ -40,7 +41,7 @@
   function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
   // ------------------------------------------------------------------
-  // Codificación del hash: JSON → UTF-8 → base64url
+  // Codificación del hash: texto → UTF-8 → base64url
   // ------------------------------------------------------------------
   function utf8Encode(str) {
     if (window.TextEncoder) return new TextEncoder().encode(str);
@@ -289,8 +290,44 @@
     return d;
   }
 
-  function encodeData(d) { return base64urlEncode(JSON.stringify(pack(d))); }
-  function decodeData(s) { return unpack(JSON.parse(base64urlDecode(s))); }
+  // Formato del link (v2): campos en un orden fijo, separados por \x1f, sin
+  // claves ni comillas; fecha AAAAMMDD, horas HHMM y color sin "#". Queda un
+  // ~30 % más corto que el JSON de la v1, que se sigue leyendo igual.
+  var SEP = "\x1f";
+  var FIELDS = ["n", "d", "t", "o", "a", "e", "w", "p", "x", "m", "s", "c", "r"];
+
+  function serialize(o) {
+    var vals = FIELDS.map(function (k) {
+      var v = o[k];
+      if (v === undefined || v === null) return "";
+      v = String(v);
+      if (k === "d" || k === "t" || k === "e") v = v.replace(/[-:]/g, "");
+      if (k === "c") v = v.replace("#", "");
+      return v.split(SEP).join(" ");
+    });
+    while (vals.length && vals[vals.length - 1] === "") vals.pop();
+    return "2" + SEP + vals.join(SEP);
+  }
+
+  function deserialize(str) {
+    if (str.charAt(0) === "{") return JSON.parse(str); // links v1
+    var vals = str.split(SEP);
+    if (vals.shift() !== "2") throw new Error("versión desconocida");
+    var o = { v: 2 };
+    FIELDS.forEach(function (k, i) {
+      var v = vals[i];
+      if (!v) return;
+      if (k === "d") v = v.replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3");
+      else if (k === "t" || k === "e") v = v.replace(/^(\d{2})(\d{2})$/, "$1:$2");
+      else if (k === "c") v = "#" + v;
+      else if (k === "o") v = /^-?\d+$/.test(v) ? Number(v) : null;
+      o[k] = v;
+    });
+    return o;
+  }
+
+  function encodeData(d) { return base64urlEncode(serialize(pack(d))); }
+  function decodeData(s) { return unpack(deserialize(base64urlDecode(s))); }
 
   // ------------------------------------------------------------------
   // Fechas y horas
@@ -962,6 +999,8 @@
     var submitted = false;
     var currentLink = "", qrLink = "", currentData = null;
     var photo = null; // { param, dataUrl } de la foto comprimida
+    // Links cortos (solo si el backend opcional atiende /api/s en este dominio)
+    var shortApi = "", shortLink = "", shortFor = "", currentPayload = "";
 
     if (navigator.share) $("#btn-share").hidden = false;
 
@@ -1055,6 +1094,11 @@
 
       $("#message-count").textContent = f.message.value.length;
 
+      // Aviso (no bloquea): fecha en el pasado, casi siempre es un error de tipeo
+      var now = new Date();
+      var today = now.getFullYear() + "-" + pad2(now.getMonth() + 1) + "-" + pad2(now.getDate());
+      $("#date-past").hidden = !(isValidDate(d.date) && d.date < today);
+
       // Vista previa
       var pd = previewData(d);
       applyTheme(preview, pd);
@@ -1069,13 +1113,17 @@
       var payload = encodeData(d);
       var photoPart = photo ? "&f=" + photo.param : "";
       currentData = d;
-      qrLink = baseUrl() + "#i=" + payload;  // la foto no entra en un QR
-      currentLink = qrLink + photoPart;
+      currentPayload = payload + photoPart;
+      if (shortFor !== currentPayload) shortLink = ""; // cambió algo: hay que volver a acortar
+      // El link largo con foto no entra en un QR; el corto sí la incluye.
+      qrLink = shortLink || baseUrl() + "#i=" + payload;
+      currentLink = shortLink || qrLink + photoPart;
+      $("#short-row").hidden = !shortApi || !!shortLink;
       $("#out-link").value = currentLink;
       $("#out-edit").value = baseUrl() + "#e=" + payload + photoPart;
       $("#btn-open").href = currentLink;
       $("#btn-wa").href = "https://wa.me/?text=" + encodeURIComponent(shareText(d, currentLink));
-      $("#qr-photo-note").hidden = !photo;
+      $("#qr-photo-note").hidden = !photo || !!shortLink;
       renderQr(qrLink);
 
       var admin = $("#rsvp-admin");
@@ -1170,6 +1218,45 @@
       if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, fallback);
       else fallback();
     }
+
+    // ---- Link corto ----
+    var sameSite = false;
+    try { sameSite = location.protocol !== "file:" && new URL(baseUrl()).origin === location.origin; } catch (e) { /* URL rara */ }
+    if (sameSite) {
+      fetch("/api/s", { headers: { Accept: "application/json" } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) { if (j && j.ok) { shortApi = "/api/s"; update(); } })
+        .catch(function () { /* sin backend: solo links largos */ });
+    }
+    $("#btn-short").addEventListener("click", function () {
+      var btn = this, status = $("#copy-status"), forPayload = currentPayload;
+      if (!shortApi || !currentData) return;
+      btn.disabled = true;
+      status.textContent = "Acortando…";
+      fetch(shortApi, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ i: encodeData(currentData), f: photo ? photo.param : "" })
+      })
+        .then(function (r) {
+          if (r.ok) return r.json();
+          return r.json().catch(function () { return {}; }).then(function (j) { throw new Error(j.error || "HTTP " + r.status); });
+        })
+        .then(function (j) {
+          if (!j || !/^[2-9a-z]{4,12}$/.test(j.code)) throw new Error("respuesta inválida");
+          if (forPayload !== currentPayload) { status.textContent = ""; return; } // se editó mientras tanto
+          shortLink = baseUrl() + "?s=" + j.code;
+          shortFor = forPayload;
+          update();
+          status.textContent = "¡Listo! Link corto creado ✂️ Si cambiás algo, vas a tener que acortarlo de nuevo.";
+        })
+        .catch(function (err) {
+          status.textContent = err && err.message === "party is over"
+            ? "No se puede acortar: la fecha de la fiesta ya pasó. Revisá la fecha."
+            : "No se pudo acortar el link. Podés mandar el largo: funciona igual.";
+        })
+        .then(function () { btn.disabled = false; });
+    });
 
     $("#btn-copy").addEventListener("click", function () {
       if (currentLink) copy(currentLink, $("#copy-status"), "¡Link copiado! Pegalo donde quieras 📋");
@@ -1292,12 +1379,31 @@
   function readParams() {
     var hash = new URLSearchParams(location.hash.replace(/^#/, ""));
     var query = new URLSearchParams(location.search);
-    return { invite: hash.get("i") || query.get("i"), edit: hash.get("e"), photo: hash.get("f") || query.get("f") };
+    return { invite: hash.get("i") || query.get("i"), edit: hash.get("e"), photo: hash.get("f") || query.get("f"),
+      short: query.get("s") };
+  }
+
+  // Link corto (?s=<código>): los datos los guarda el backend opcional.
+  function routeShort(code) {
+    code = code.trim().toLowerCase();
+    var endpoint = /^[2-9a-z]{4,12}$/.test(code) ? sameOriginEndpoint("/api/s/" + code) : "";
+    var done = function () { $("#loading").hidden = true; };
+    if (!endpoint) { done(); showGenerator({ error: true }); return; }
+    fetch(endpoint, { headers: { Accept: "application/json" } })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
+      .then(function (j) {
+        var data = decodeData(String(j.i));
+        data.photo = decodePhoto(j.f ? String(j.f) : "");
+        done();
+        showInvite(data);
+      })
+      .catch(function () { done(); showGenerator({ error: true }); });
   }
 
   function route() {
-    $("#loading").hidden = true;
     var p = readParams();
+    if (p.invite === null && p.edit === null && p.short) { routeShort(p.short); return; }
+    $("#loading").hidden = true;
     if (p.invite !== null) {
       var data;
       try { data = decodeData(p.invite); } catch (e) { data = null; }
